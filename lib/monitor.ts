@@ -1,6 +1,7 @@
 import { getSupabase } from "./supabase";
 import { fetchCompanyNews, fetchQuote } from "./finnhub";
 import { classifyNewsItems } from "./classify";
+import { summarizeEvents } from "./summarize";
 
 const PRICE_TRIGGER_THRESHOLD_PCT = 5; // Section 5.1 — daily close vs. previous close, not intraday.
 
@@ -60,6 +61,7 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
     source_url: string;
     published_at: string;
     price_change_pct?: number;
+    summary_text?: string;
   };
   const rows: NewsEventRow[] = [];
 
@@ -91,6 +93,18 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
   }
 
   if (rows.length === 0) return 0;
+
+  const summaries = await summarizeEvents(
+    company.ticker,
+    rows.map((row) => ({
+      event_type: row.event_type,
+      headline: row.headline,
+      price_change_pct: row.price_change_pct,
+    })),
+  );
+  rows.forEach((row, i) => {
+    row.summary_text = summaries[i];
+  });
 
   const { error: insertError } = await supabase.from("news_events").insert(rows);
   if (insertError) throw insertError;
