@@ -1,0 +1,30 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getOrCreateUser } from "@/lib/user";
+import { sendDigest } from "@/lib/digest";
+
+// Same dual-header auth as /api/cron/monitor — see that route for why.
+function isAuthorized(request: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+
+  if (request.headers.get("x-cron-secret") === secret) return true;
+  if (request.headers.get("authorization") === `Bearer ${secret}`) return true;
+  return false;
+}
+
+async function handleDigest(request: NextRequest) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const user = await getOrCreateUser();
+  const result = await sendDigest(user);
+
+  if (!result.sent) {
+    return NextResponse.json({ sent: false, reason: result.reason });
+  }
+  return NextResponse.json({ sent: true, item_count: result.itemCount });
+}
+
+export const GET = handleDigest;
+export const POST = handleDigest;
