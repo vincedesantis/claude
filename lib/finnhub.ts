@@ -1,9 +1,40 @@
+import { withRetry } from "./retry";
+
 const FINNHUB_BASE = "https://finnhub.io/api/v1";
+
+export class FinnhubError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "FinnhubError";
+    this.status = status;
+  }
+}
+
+// Network errors and 429/5xx are worth retrying; a 401/403 (e.g. a revoked
+// key) won't fix itself on retry, so fail fast instead of burning attempts.
+function isRetryableFinnhubError(error: unknown): boolean {
+  if (!(error instanceof FinnhubError) || error.status === undefined) return true;
+  return error.status === 429 || error.status >= 500;
+}
 
 function getApiKey(): string {
   const key = process.env.FINNHUB_API_KEY;
   if (!key) throw new Error("FINNHUB_API_KEY must be set");
   return key;
+}
+
+async function finnhubGet(url: string): Promise<unknown> {
+  return withRetry(
+    async () => {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new FinnhubError(`Finnhub request failed: ${res.status}`, res.status);
+      }
+      return res.json();
+    },
+    { isRetryable: isRetryableFinnhubError },
+  );
 }
 
 export type FinnhubNewsItem = {
@@ -20,12 +51,8 @@ export async function fetchCompanyNews(
   to: string,
 ): Promise<FinnhubNewsItem[]> {
   const url = `${FINNHUB_BASE}/company-news?symbol=${encodeURIComponent(ticker)}&from=${from}&to=${to}&token=${getApiKey()}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Finnhub news request failed for ${ticker}: ${res.status}`);
-  }
-  const data = await res.json();
-  return Array.isArray(data) ? data : [];
+  const data = await finnhubGet(url);
+  return Array.isArray(data) ? (data as FinnhubNewsItem[]) : [];
 }
 
 export type FinnhubQuote = {
@@ -35,9 +62,5 @@ export type FinnhubQuote = {
 
 export async function fetchQuote(ticker: string): Promise<FinnhubQuote> {
   const url = `${FINNHUB_BASE}/quote?symbol=${encodeURIComponent(ticker)}&token=${getApiKey()}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Finnhub quote request failed for ${ticker}: ${res.status}`);
-  }
-  return res.json();
+  return (await finnhubGet(url)) as FinnhubQuote;
 }

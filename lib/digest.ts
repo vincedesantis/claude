@@ -1,5 +1,6 @@
-import { Resend } from "resend";
 import { getSupabase } from "./supabase";
+import { getResend } from "./resend";
+import { withRetry } from "./retry";
 import type { Cadence } from "./settings";
 
 // Section 5.1: daily cadence has no elapsed-time gate — every cron run is a
@@ -9,16 +10,6 @@ const CADENCE_DAYS: Record<Exclude<Cadence, "daily">, number> = {
   biweekly: 14,
   monthly: 30,
 };
-
-let resendClient: Resend | undefined;
-
-function getResend(): Resend {
-  if (resendClient) return resendClient;
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error("RESEND_API_KEY must be set");
-  resendClient = new Resend(apiKey);
-  return resendClient;
-}
 
 type UnsentItem = {
   id: string;
@@ -162,13 +153,15 @@ export async function sendDigest(user: {
       ? `Investor News Digest — ${items.length} item${items.length === 1 ? "" : "s"}`
       : "Investor News Digest — quiet period";
 
-  const { error: sendError } = await getResend().emails.send({
-    from: fromEmail,
-    to: user.email,
-    subject,
-    html,
+  await withRetry(async () => {
+    const { error: sendError } = await getResend().emails.send({
+      from: fromEmail,
+      to: user.email,
+      subject,
+      html,
+    });
+    if (sendError) throw new Error(sendError.message);
   });
-  if (sendError) throw new Error(sendError.message);
 
   const { data: digest, error: digestError } = await supabase
     .from("digests")
