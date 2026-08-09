@@ -15,7 +15,7 @@ function getAnthropic(): Anthropic {
 const FORBIDDEN_LANGUAGE = /\b(buy|sell|should|recommend|hold)\b/i;
 
 export type SummarizableEvent = {
-  event_type: "material" | "pr" | "price_trigger";
+  event_type: "material" | "pr" | "price_trigger" | "52w_high" | "52w_low" | "ma200_cross";
   headline: string;
   price_change_pct?: number;
 };

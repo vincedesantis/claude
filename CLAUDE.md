@@ -34,7 +34,9 @@ Non-negotiable guardrails
 
 Locked decisions (don't re-ask)
 
-* Price trigger = daily close vs. previous close, >5%, not intraday
+* Price trigger = daily close vs. previous close, >3% (changed from >5%), not intraday
+* 52-week high/low and a 200-day moving average cross are their own price-based triggers, alongside the daily % move (Finnhub's basic-financials data covers 52-week high/low immediately; the 200-day MA is computed from price history this app records itself day-by-day, so it isn't available for a given ticker until ~200 trading days of history accumulate)
+* Headline/news inclusion: earnings releases and guidance revisions, and corporate actions (M&A, CEO/CFO changes, regulatory actions/investigations), are always surfaced regardless of price action. All other news is only surfaced on a day one of the price-based triggers fired, and only if it's judged as actually related to that move — not just any news published that day.
 * Empty digest period = send anyway with a "quiet period" note, don't skip
 
 Build order

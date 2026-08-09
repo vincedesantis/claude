@@ -32,12 +32,15 @@ Claude Code should treat these as boundaries to actively check work against, not
 **Watch → Detect → Filter → Summarize → Batch → Send.**
 Monitoring runs **daily regardless of digest cadence** — a monthly digest still needs daily checks feeding a running log, or it would miss most of what happened in the gap.
 ### 5.1 Decisions Locked In (previously open questions)
-- **Price trigger measurement:** daily close vs. previous close, >5% either direction. Not intraday. Change this in `lib/filters.ts` if intraday matters later — it's a data-source upgrade (Finnhub free tier doesn't give reliable intraday ticks anyway).
+- **Price trigger measurement:** daily close vs. previous close, >3% either direction (changed from >5%). Not intraday. Change this in `lib/monitor.ts` if intraday matters later — it's a data-source upgrade (Finnhub free tier doesn't give reliable intraday ticks anyway).
+- **52-week high/low:** its own trigger, sourced from Finnhub's basic-financials data (`52WeekHigh`/`52WeekLow` + the date each was set) — fires when today is the date Finnhub recorded as setting a new one.
+- **200-day moving average cross:** its own trigger. Finnhub's free tier doesn't reliably expose historical daily prices, so this is computed from price history the app records itself, one day at a time (`price_history` table). Not available for a given ticker until ~200 trading days of history have accumulated for it.
 - **Empty digest behavior:** if nothing qualified since the last send, **send anyway** with a short "quiet period — nothing material this cycle" note. This confirms the system is alive rather than leaving Vince wondering if it silently broke. Cheap to flip to "skip send" later if it turns out to be annoying.
 ### 5.2 What Counts as "Moves the Company"
-- **Material events:** earnings releases, M&A activity, guidance changes, executive changes (CEO/CFO), regulatory actions/investigations.
-- **Price trigger:** daily close moves >5% vs. previous close. When this fires, attempt to surface the news driving it, not just the number.
-- **PR releases:** company-issued releases, filtered for investor relevance (product launches, partnerships, financial announcements) — not every PR wire item clears the bar. This is the fuzziest category; implement as an LLM relevance classification, not a keyword filter.
+- **Earnings and guidance revisions:** earnings releases, or a guidance raise/cut. Always surfaced regardless of price action.
+- **Corporate actions:** M&A activity, executive changes (CEO/CFO), regulatory actions/investigations. Always surfaced regardless of price action.
+- **Price-based triggers:** daily close moves >3% vs. previous close, a new 52-week high/low, or a 200-day moving-average cross (Section 5.1). Each fires its own line item.
+- **Other news:** everything else — including company press releases — is only surfaced on a day one of the price-based triggers fired above, and only if it's judged as actually explaining that move, not just any news published that day. This is the fuzziest category; implement as an LLM relevance classification, not a keyword filter.
 - Anything outside these three buckets is discarded, not logged.
 ## 6. Functional Requirements
 ### 6.1 Watchlist Management (Dashboard)
@@ -86,12 +89,16 @@ users
 watchlist_companies
   id, user_id, ticker, company_name, added_at
 news_events
-  id, company_id, event_type [material | price_trigger | pr],
+  id, company_id, event_type [material | price_trigger | pr | 52w_high | 52w_low | ma200_cross],
   headline, source_url, published_at,
   price_change_pct (nullable), summary_text,
   digest_id (nullable — set once included in a sent digest)
 digests
   id, user_id, sent_at, cadence_at_send, item_count
+price_history
+  id, company_id, trade_date, close
+  -- one row per company per trading day, recorded by the monitoring cron;
+  -- feeds the 200-day moving average calculation (Section 5.1)
 ```
 ## 9. Build Order & Phases
 Each phase should be verified working before the next starts. This is the sequence Claude Code should follow.

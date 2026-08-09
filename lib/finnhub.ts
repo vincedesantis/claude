@@ -64,3 +64,17 @@ export async function fetchQuote(ticker: string): Promise<FinnhubQuote> {
   const url = `${FINNHUB_BASE}/quote?symbol=${encodeURIComponent(ticker)}&token=${getApiKey()}`;
   return (await finnhubGet(url)) as FinnhubQuote;
 }
+
+export type FinnhubBasicFinancials = {
+  metric: {
+    "52WeekHigh"?: number;
+    "52WeekLow"?: number;
+    "52WeekHighDate"?: string;
+    "52WeekLowDate"?: string;
+  };
+};
+
+export async function fetchBasicFinancials(ticker: string): Promise<FinnhubBasicFinancials> {
+  const url = `${FINNHUB_BASE}/stock/metric?symbol=${encodeURIComponent(ticker)}&metric=all&token=${getApiKey()}`;
+  return (await finnhubGet(url)) as FinnhubBasicFinancials;
+}

@@ -13,7 +13,7 @@ const CADENCE_DAYS: Record<Exclude<Cadence, "daily">, number> = {
 
 type UnsentItem = {
   id: string;
-  event_type: "material" | "pr" | "price_trigger";
+  event_type: "material" | "pr" | "price_trigger" | "52w_high" | "52w_low" | "ma200_cross";
   headline: string;
   source_url: string;
   published_at: string;
@@ -77,8 +77,11 @@ function groupByCompany(items: UnsentItem[]): CompanyGroup[] {
 
 const EVENT_LABELS: Record<UnsentItem["event_type"], string> = {
   material: "Material event",
-  pr: "Press release",
+  pr: "Related news",
   price_trigger: "Price move",
+  "52w_high": "52-week high",
+  "52w_low": "52-week low",
+  ma200_cross: "200-day MA cross",
 };
 
 function escapeHtml(value: string): string {

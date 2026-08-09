@@ -11,20 +11,25 @@ function getAnthropic(): Anthropic {
   return client;
 }
 
-export type EventClassification = "material" | "pr" | "discard";
+export type EventClassification = "earnings" | "corporate_action" | "move_related" | "discard";
 
-// Per PRD Section 5.2: material events and PR relevance are judged by the
-// model rather than keyword-matched, since "moves the company" is fuzzy.
+const VALID_LABELS: EventClassification[] = ["earnings", "corporate_action", "move_related", "discard"];
+
+// earnings and corporate_action are always surfaced regardless of price
+// action; move_related is only ever kept by the caller on a day the stock
+// actually moved (Section 5.2, tightened per Vince's later filter revision).
 const SYSTEM_PROMPT = `You classify news items about a public company for a personal investor digest. For each item, decide exactly one label:
-- "material": earnings releases, M&A activity, guidance changes, executive changes (CEO/CFO), or regulatory actions/investigations.
-- "pr": a company-issued press release that is genuinely investor-relevant (product launches, partnerships, financial announcements) — not routine or promotional noise.
-- "discard": anything else, including minor mentions, opinion pieces, analyst commentary, or unrelated noise.
+- "earnings": an earnings release, or a guidance raise/cut/revision.
+- "corporate_action": M&A activity, an executive change (CEO/CFO), or a regulatory action/investigation.
+- "move_related": news that plausibly explains a notable stock price move. Only use this label if the message below says a price move occurred today — never use it otherwise.
+- "discard": anything else — minor mentions, routine press releases, opinion pieces, analyst commentary, or unrelated noise.
 
 Respond with only a JSON array of strings, one label per item, in the same order as the input. No other text, no markdown fences.`;
 
 export async function classifyNewsItems(
   ticker: string,
   items: Pick<FinnhubNewsItem, "headline" | "summary" | "source">[],
+  moveContext: string,
 ): Promise<EventClassification[]> {
   if (items.length === 0) return [];
 
@@ -36,7 +41,7 @@ export async function classifyNewsItems(
     model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: `Ticker: ${ticker}\n\n${numbered}` }],
+    messages: [{ role: "user", content: `Ticker: ${ticker}\n${moveContext}\n\n${numbered}` }],
   });
 
   const text = response.content
@@ -54,7 +59,7 @@ function safeParseClassifications(text: string, expectedLength: number): EventCl
     if (!Array.isArray(raw)) throw new Error("response was not a JSON array");
 
     return Array.from({ length: expectedLength }, (_, i) =>
-      raw[i] === "material" || raw[i] === "pr" ? raw[i] : "discard",
+      VALID_LABELS.includes(raw[i]) ? raw[i] : "discard",
     );
   } catch {
     // Fail closed — an unparseable response discards everything rather than
