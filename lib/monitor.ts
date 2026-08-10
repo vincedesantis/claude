@@ -65,11 +65,27 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
 
   const rows: NewsEventRow[] = [];
 
+  // Price-based signals are recomputed from scratch on every run (unlike
+  // real news, which is naturally deduped by article URL), so a repeat run
+  // on the same calendar day — a second manual trigger, a retried cron —
+  // would otherwise log the same signal twice. Track what's already been
+  // logged today per event type and skip re-inserting it.
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const { data: todaysPriceEvents, error: todaysPriceEventsError } = await supabase
+    .from("news_events")
+    .select("event_type")
+    .eq("company_id", company.id)
+    .in("event_type", ["price_trigger", "52w_high", "52w_low", "ma200_cross"])
+    .gte("published_at", todayStart.toISOString());
+  if (todaysPriceEventsError) throw todaysPriceEventsError;
+  const alreadyLoggedToday = new Set((todaysPriceEvents ?? []).map((e) => e.event_type));
+
   const priceChangePct = quote.pc > 0 ? ((quote.c - quote.pc) / quote.pc) * 100 : null;
   const priceTriggered =
     priceChangePct !== null && Math.abs(priceChangePct) > PRICE_TRIGGER_THRESHOLD_PCT;
 
-  if (priceTriggered && priceChangePct !== null) {
+  if (priceTriggered && priceChangePct !== null && !alreadyLoggedToday.has("price_trigger")) {
     const rounded = Math.round(priceChangePct * 100) / 100;
     rows.push({
       company_id: company.id,
@@ -83,8 +99,11 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
 
   // Best-effort: missing/unavailable data here shouldn't fail the whole
   // ticker's check, just skip that particular signal.
+  let fiftyTwoWeekFired = false;
   try {
     for (const signal of await checkFiftyTwoWeek(company.ticker)) {
+      fiftyTwoWeekFired = true;
+      if (alreadyLoggedToday.has(signal.event_type)) continue;
       rows.push({
         company_id: company.id,
         event_type: signal.event_type,
@@ -97,22 +116,28 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
     console.error(`52-week high/low check failed for ${company.ticker}`, error);
   }
 
+  let maSignalFired = false;
   try {
     const maSignal = await recordCloseAndCheckMovingAverage(company.id, company.ticker, quote.c);
     if (maSignal) {
-      rows.push({
-        company_id: company.id,
-        event_type: maSignal.event_type,
-        headline: maSignal.headline,
-        source_url: yahooFinanceUrl(company.ticker),
-        published_at: new Date().toISOString(),
-      });
+      maSignalFired = true;
+      if (!alreadyLoggedToday.has(maSignal.event_type)) {
+        rows.push({
+          company_id: company.id,
+          event_type: maSignal.event_type,
+          headline: maSignal.headline,
+          source_url: yahooFinanceUrl(company.ticker),
+          published_at: new Date().toISOString(),
+        });
+      }
     }
   } catch (error) {
     console.error(`200-day moving average check failed for ${company.ticker}`, error);
   }
 
-  const isMoveDay = rows.length > 0;
+  // Based on the underlying condition, not just what got newly inserted —
+  // a repeat run on a real move day should still gate news the same way.
+  const isMoveDay = priceTriggered || fiftyTwoWeekFired || maSignalFired;
 
   const { data: existing, error: existingError } = await supabase
     .from("news_events")
