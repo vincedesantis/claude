@@ -1,6 +1,7 @@
 import { getSupabase } from "./supabase";
 import { getResend } from "./resend";
 import { withRetry } from "./retry";
+import { listWatchlist } from "./watchlist";
 import type { Cadence } from "./settings";
 
 // Section 5.1: daily cadence has no elapsed-time gate — every cron run is a
@@ -56,6 +57,56 @@ async function fetchUnsentItems(userId: string): Promise<UnsentItem[]> {
   return (data ?? []) as unknown as UnsentItem[];
 }
 
+type TickerMove = { ticker: string; companyName: string; changePct: number | null };
+
+function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+// Daily close for every watchlist ticker is already recorded (for the
+// 200-day MA calc), so tickers that didn't clear the alert bar can still be
+// shown with their day's move, using data already on hand — no extra
+// Finnhub calls needed.
+async function fetchOtherTickerMoves(
+  userId: string,
+  excludeCompanyIds: Set<string>,
+): Promise<TickerMove[]> {
+  const supabase = getSupabase();
+  const allCompanies = await listWatchlist(userId);
+  const otherCompanies = allCompanies.filter((c) => !excludeCompanyIds.has(c.id));
+  if (otherCompanies.length === 0) return [];
+
+  const fiveDaysAgo = new Date();
+  fiveDaysAgo.setUTCDate(fiveDaysAgo.getUTCDate() - 5);
+
+  const { data: history, error } = await supabase
+    .from("price_history")
+    .select("company_id, trade_date, close")
+    .in(
+      "company_id",
+      otherCompanies.map((c) => c.id),
+    )
+    .gte("trade_date", formatDate(fiveDaysAgo))
+    .order("trade_date", { ascending: false });
+  if (error) throw error;
+
+  const byCompany = new Map<string, { close: number }[]>();
+  for (const row of history ?? []) {
+    const list = byCompany.get(row.company_id) ?? [];
+    list.push({ close: Number(row.close) });
+    byCompany.set(row.company_id, list);
+  }
+
+  return otherCompanies.map((company) => {
+    const [latest, previous] = byCompany.get(company.id) ?? [];
+    const changePct =
+      latest && previous && previous.close > 0
+        ? Math.round(((latest.close - previous.close) / previous.close) * 10_000) / 100
+        : null;
+    return { ticker: company.ticker, companyName: company.company_name, changePct };
+  });
+}
+
 type CompanyGroup = { ticker: string; companyName: string; items: UnsentItem[] };
 
 function groupByCompany(items: UnsentItem[]): CompanyGroup[] {
@@ -92,7 +143,7 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function renderDigestHtml(groups: CompanyGroup[]): string {
+function renderDigestHtml(groups: CompanyGroup[], otherTickersHtml: string): string {
   const sections = groups
     .map((group) => {
       const rows = group.items
@@ -124,14 +175,39 @@ function renderDigestHtml(groups: CompanyGroup[]): string {
     <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827;">
       <h1 style="font-size:20px;">Investor News Digest</h1>
       ${sections}
+      ${otherTickersHtml}
     </div>`;
 }
 
-function renderQuietPeriodHtml(): string {
+function renderOtherTickersHtml(moves: TickerMove[]): string {
+  if (moves.length === 0) return "";
+
+  const rows = moves
+    .map((m) => {
+      const display = m.changePct == null ? "—" : `${m.changePct > 0 ? "+" : ""}${m.changePct}%`;
+      const color =
+        m.changePct == null ? "#71717a" : m.changePct > 0 ? "#15803d" : m.changePct < 0 ? "#b91c1c" : "#71717a";
+      return `
+        <tr>
+          <td style="padding:4px 12px 4px 0;color:#111827;font-size:14px;">${escapeHtml(m.companyName)} (${escapeHtml(m.ticker)})</td>
+          <td style="padding:4px 0;color:${color};font-size:14px;text-align:right;">${display}</td>
+        </tr>`;
+    })
+    .join("");
+
+  return `
+    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e4e4e7;">
+      <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:#71717a;margin-bottom:8px;">Also on your watchlist</h2>
+      <table style="width:100%;border-collapse:collapse;">${rows}</table>
+    </div>`;
+}
+
+function renderQuietPeriodHtml(otherTickersHtml: string): string {
   return `
     <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827;">
       <h1 style="font-size:20px;">Investor News Digest</h1>
       <p>Quiet period — nothing material this cycle.</p>
+      ${otherTickersHtml}
     </div>`;
 }
 
@@ -150,7 +226,16 @@ export async function sendDigest(user: {
   const fromEmail = process.env.RESEND_FROM_EMAIL;
   if (!fromEmail) throw new Error("RESEND_FROM_EMAIL must be set");
 
-  const html = items.length > 0 ? renderDigestHtml(groupByCompany(items)) : renderQuietPeriodHtml();
+  const otherTickerMoves = await fetchOtherTickerMoves(
+    user.id,
+    new Set(items.map((item) => item.company_id)),
+  );
+  const otherTickersHtml = renderOtherTickersHtml(otherTickerMoves);
+
+  const html =
+    items.length > 0
+      ? renderDigestHtml(groupByCompany(items), otherTickersHtml)
+      : renderQuietPeriodHtml(otherTickersHtml);
   const subject =
     items.length > 0
       ? `Investor News Digest — ${items.length} item${items.length === 1 ? "" : "s"}`
