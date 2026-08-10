@@ -3,6 +3,7 @@ import { getResend } from "./resend";
 import { withRetry } from "./retry";
 import { listWatchlist } from "./watchlist";
 import { isWeekend } from "./market";
+import { generateSpotlight } from "./spotlight";
 import type { Cadence } from "./settings";
 
 // Section 5.1: daily cadence has no elapsed-time gate — every cron run is a
@@ -127,6 +128,74 @@ function groupByCompany(items: UnsentItem[]): CompanyGroup[] {
   return Array.from(groups.values());
 }
 
+const PRICE_EVENT_TYPES: UnsentItem["event_type"][] = ["price_trigger", "52w_high", "52w_low", "ma200_cross"];
+
+type SpotlightEntry = {
+  ticker: string;
+  companyName: string;
+  headerText: string;
+  isUp: boolean | null;
+  blurb: string;
+  sortKey: number;
+};
+
+// One AI-written narrative per company that had a price-based move today,
+// synthesizing that day's items into a newsletter-style blurb (Vince's
+// "Stock Spotlight" request) — shown above the itemized headlines, which
+// stay as-is for anyone who wants the individual sources.
+async function buildSpotlights(groups: CompanyGroup[]): Promise<SpotlightEntry[]> {
+  const candidates = groups.filter((group) =>
+    group.items.some((item) => PRICE_EVENT_TYPES.includes(item.event_type)),
+  );
+
+  const entries = await Promise.all(
+    candidates.map(async (group) => {
+      const priceItem = group.items.find((item) => item.event_type === "price_trigger");
+      const highItem = group.items.find((item) => item.event_type === "52w_high");
+      const lowItem = group.items.find((item) => item.event_type === "52w_low");
+      const maItem = group.items.find((item) => item.event_type === "ma200_cross");
+
+      let headerText: string;
+      let isUp: boolean | null;
+      let sortKey: number;
+
+      if (priceItem?.price_change_pct != null) {
+        const pct = priceItem.price_change_pct;
+        headerText = `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}%`;
+        isUp = pct > 0;
+        sortKey = Math.abs(pct);
+      } else if (highItem) {
+        headerText = "52-week high";
+        isUp = true;
+        sortKey = 0;
+      } else if (lowItem) {
+        headerText = "52-week low";
+        isUp = false;
+        sortKey = 0;
+      } else if (maItem) {
+        const crossedAbove = maItem.headline.includes("above");
+        headerText = crossedAbove ? "crossed above 200-day MA" : "crossed below 200-day MA";
+        isUp = crossedAbove;
+        sortKey = 0;
+      } else {
+        headerText = "";
+        isUp = null;
+        sortKey = 0;
+      }
+
+      const blurb = await generateSpotlight(
+        group.ticker,
+        group.companyName,
+        group.items.map((item) => ({ headline: item.headline, summary_text: item.summary_text })),
+      );
+
+      return { ticker: group.ticker, companyName: group.companyName, headerText, isUp, blurb, sortKey };
+    }),
+  );
+
+  return entries.sort((a, b) => b.sortKey - a.sortKey);
+}
+
 const EVENT_LABELS: Record<UnsentItem["event_type"], string> = {
   material: "Material event",
   pr: "Related news",
@@ -144,7 +213,32 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function renderDigestHtml(groups: CompanyGroup[], otherTickersHtml: string): string {
+function renderSpotlightHtml(entries: SpotlightEntry[]): string {
+  if (entries.length === 0) return "";
+
+  const rows = entries
+    .map((entry) => {
+      const color = entry.isUp === null ? "#111827" : entry.isUp ? "#15803d" : "#b91c1c";
+      return `
+        <div style="margin-bottom:20px;">
+          <div style="font-size:15px;">
+            <span style="font-weight:700;">${escapeHtml(entry.companyName)}</span>
+            <span style="color:#71717a;"> $${escapeHtml(entry.ticker)}</span>
+            <span style="color:${color};font-weight:600;"> (${escapeHtml(entry.headerText)})</span>
+          </div>
+          <div style="font-size:14px;color:#3f3f46;margin-top:4px;">${escapeHtml(entry.blurb)}</div>
+        </div>`;
+    })
+    .join("");
+
+  return `
+    <div style="margin-bottom:28px;">
+      <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:#71717a;margin-bottom:12px;">Stock Spotlight</h2>
+      ${rows}
+    </div>`;
+}
+
+function renderDigestHtml(groups: CompanyGroup[], spotlightHtml: string, otherTickersHtml: string): string {
   const sections = groups
     .map((group) => {
       const rows = group.items
@@ -175,6 +269,7 @@ function renderDigestHtml(groups: CompanyGroup[], otherTickersHtml: string): str
   return `
     <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827;">
       <h1 style="font-size:20px;">Investor News Digest</h1>
+      ${spotlightHtml}
       ${sections}
       ${otherTickersHtml}
     </div>`;
@@ -236,9 +331,13 @@ export async function sendDigest(user: {
   );
   const otherTickersHtml = renderOtherTickersHtml(otherTickerMoves);
 
+  const groups = groupByCompany(items);
+  const spotlights = items.length > 0 ? await buildSpotlights(groups) : [];
+  const spotlightHtml = renderSpotlightHtml(spotlights);
+
   const html =
     items.length > 0
-      ? renderDigestHtml(groupByCompany(items), otherTickersHtml)
+      ? renderDigestHtml(groups, spotlightHtml, otherTickersHtml)
       : renderQuietPeriodHtml(otherTickersHtml);
   const subject =
     items.length > 0
