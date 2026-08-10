@@ -14,13 +14,15 @@ function getAnthropic(): Anthropic {
 // enforced in code, not just prompted for.
 const FORBIDDEN_LANGUAGE = /\b(buy|sell|should|recommend|hold)\b/i;
 
-export type SpotlightItem = { headline: string; summary_text: string | null };
+export type SpotlightItem = { headline: string; summary_text: string | null; source_url: string };
 
 const SYSTEM_PROMPT = `You write a short "Stock Spotlight" blurb for a personal investor newsletter — a tight, factual 2-4 sentence narrative synthesizing what happened and why the stock moved. Use concrete numbers (revenue, EPS, guidance) when given. Report facts only, in a natural newsletter voice, not a bullet list.
 
+Link specific phrases inline using markdown syntax, e.g. "after [the company's founder](https://example.com/article) built a stake". Use ONLY the exact URLs given to you below, one per source item — never invent or alter a URL. Link the specific claim that came from that source, not the whole sentence. Not every clause needs a link — only the ones tied to a specific source below.
+
 Hard rule: never use investment or trading advice/recommendation language — no "buy", "sell", "hold", "should", "recommend", and no price targets or opinions.
 
-Respond with only the blurb text. No headline, no ticker, no markdown, no quotes around it — just the paragraph.`;
+Respond with only the blurb text (with inline markdown links where appropriate). No headline, no ticker, no surrounding quotes — just the paragraph.`;
 
 export async function generateSpotlight(
   ticker: string,
@@ -28,12 +30,12 @@ export async function generateSpotlight(
   items: SpotlightItem[],
 ): Promise<string> {
   const context = items
-    .map((item) => `- ${item.headline}${item.summary_text ? `: ${item.summary_text}` : ""}`)
+    .map((item) => `- ${item.headline}${item.summary_text ? `: ${item.summary_text}` : ""} (source: ${item.source_url})`)
     .join("\n");
 
   const response = await getAnthropic().messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 300,
+    max_tokens: 400,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: `${companyName} (${ticker})\n\n${context}` }],
   });

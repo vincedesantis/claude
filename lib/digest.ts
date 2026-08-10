@@ -137,6 +137,7 @@ type SpotlightEntry = {
   isUp: boolean | null;
   blurb: string;
   sortKey: number;
+  allowedUrls: Set<string>;
 };
 
 // One AI-written narrative per company that had a price-based move today,
@@ -186,10 +187,15 @@ async function buildSpotlights(groups: CompanyGroup[]): Promise<SpotlightEntry[]
       const blurb = await generateSpotlight(
         group.ticker,
         group.companyName,
-        group.items.map((item) => ({ headline: item.headline, summary_text: item.summary_text })),
+        group.items.map((item) => ({
+          headline: item.headline,
+          summary_text: item.summary_text,
+          source_url: item.source_url,
+        })),
       );
+      const allowedUrls = new Set(group.items.map((item) => item.source_url));
 
-      return { ticker: group.ticker, companyName: group.companyName, headerText, isUp, blurb, sortKey };
+      return { ticker: group.ticker, companyName: group.companyName, headerText, isUp, blurb, sortKey, allowedUrls };
     }),
   );
 
@@ -213,6 +219,28 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// The model is asked to embed markdown links [text](url) on specific claims,
+// but its output is never trusted as-is: only URLs we actually supplied for
+// this company are rendered as real links (allowedUrls), everything else —
+// invented or altered URLs, or plain text — falls back to plain escaped text.
+function renderInlineLinks(text: string, allowedUrls: Set<string>): string {
+  const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
+  let result = "";
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = linkPattern.exec(text)) !== null) {
+    result += escapeHtml(text.slice(lastIndex, match.index));
+    const [, linkText, url] = match;
+    result += allowedUrls.has(url)
+      ? `<a href="${escapeHtml(url)}" style="color:inherit;text-decoration:underline;">${escapeHtml(linkText)}</a>`
+      : escapeHtml(linkText);
+    lastIndex = linkPattern.lastIndex;
+  }
+  result += escapeHtml(text.slice(lastIndex));
+  return result;
+}
+
 function renderSpotlightHtml(entries: SpotlightEntry[]): string {
   if (entries.length === 0) return "";
 
@@ -226,7 +254,7 @@ function renderSpotlightHtml(entries: SpotlightEntry[]): string {
             <span style="color:#71717a;"> $${escapeHtml(entry.ticker)}</span>
             <span style="color:${color};font-weight:600;"> (${escapeHtml(entry.headerText)})</span>
           </div>
-          <div style="font-size:14px;color:#3f3f46;margin-top:4px;">${escapeHtml(entry.blurb)}</div>
+          <div style="font-size:14px;color:#3f3f46;margin-top:4px;">${renderInlineLinks(entry.blurb, entry.allowedUrls)}</div>
         </div>`;
     })
     .join("");
