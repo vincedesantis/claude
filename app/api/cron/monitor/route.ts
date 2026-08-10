@@ -3,6 +3,7 @@ import { getOrCreateUser } from "@/lib/user";
 import { listWatchlist } from "@/lib/watchlist";
 import { monitorCompany } from "@/lib/monitor";
 import { sendFailureAlert } from "@/lib/alert";
+import { isWeekend } from "@/lib/market";
 
 // Accepts either the PRD's documented `x-cron-secret` header (for manual/API
 // testing) or Vercel's own `Authorization: Bearer $CRON_SECRET` header, which
@@ -23,6 +24,10 @@ function errorMessage(error: unknown): string {
 async function handleMonitor(request: NextRequest) {
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  if (isWeekend()) {
+    return NextResponse.json({ tickers_checked: 0, items_logged: 0, skipped: "market closed (weekend)" });
   }
 
   try {

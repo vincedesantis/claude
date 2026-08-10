@@ -2,6 +2,7 @@ import { getSupabase } from "./supabase";
 import { getResend } from "./resend";
 import { withRetry } from "./retry";
 import { listWatchlist } from "./watchlist";
+import { isWeekend } from "./market";
 import type { Cadence } from "./settings";
 
 // Section 5.1: daily cadence has no elapsed-time gate — every cron run is a
@@ -216,6 +217,9 @@ export async function sendDigest(user: {
   email: string;
   digest_cadence: Cadence;
 }): Promise<{ sent: boolean; reason?: string; itemCount?: number }> {
+  if (isWeekend()) {
+    return { sent: false, reason: "market closed (weekend)" };
+  }
   if (!(await isSendDay(user.id, user.digest_cadence))) {
     return { sent: false, reason: "not a scheduled send day" };
   }
