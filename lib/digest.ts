@@ -345,26 +345,13 @@ function renderQuietPeriodHtml(otherTickersHtml: string): string {
     </div>`;
 }
 
-export async function sendDigest(user: {
-  id: string;
-  email: string;
-  digest_cadence: Cadence;
-}): Promise<{ sent: boolean; reason?: string; itemCount?: number }> {
-  if (isWeekend()) {
-    return { sent: false, reason: "market closed (weekend)" };
-  }
-  if (!(await isSendDay(user.id, user.digest_cadence))) {
-    return { sent: false, reason: "not a scheduled send day" };
-  }
-
-  const supabase = getSupabase();
-  const items = await fetchUnsentItems(user.id);
-
-  const fromEmail = process.env.RESEND_FROM_EMAIL;
-  if (!fromEmail) throw new Error("RESEND_FROM_EMAIL must be set");
+async function buildDigestContent(
+  userId: string,
+): Promise<{ html: string; subject: string; items: UnsentItem[] }> {
+  const items = await fetchUnsentItems(userId);
 
   const otherTickerMoves = await fetchOtherTickerMoves(
-    user.id,
+    userId,
     new Set(items.map((item) => item.company_id)),
   );
   const otherTickersHtml = renderOtherTickersHtml(otherTickerMoves);
@@ -381,6 +368,39 @@ export async function sendDigest(user: {
     items.length > 0
       ? `Investor News Digest — ${items.length} item${items.length === 1 ? "" : "s"}`
       : "Investor News Digest — quiet period";
+
+  return { html, subject, items };
+}
+
+// Renders exactly what sendDigest() would send, without sending it and
+// without marking anything as sent — for previewing what the next real send
+// would look like (also bypasses the weekend/cadence gates, since the point
+// is to preview regardless of whether today is actually a send day).
+export async function previewDigest(
+  userId: string,
+): Promise<{ html: string; subject: string; itemCount: number }> {
+  const { html, subject, items } = await buildDigestContent(userId);
+  return { html, subject, itemCount: items.length };
+}
+
+export async function sendDigest(user: {
+  id: string;
+  email: string;
+  digest_cadence: Cadence;
+}): Promise<{ sent: boolean; reason?: string; itemCount?: number }> {
+  if (isWeekend()) {
+    return { sent: false, reason: "market closed (weekend)" };
+  }
+  if (!(await isSendDay(user.id, user.digest_cadence))) {
+    return { sent: false, reason: "not a scheduled send day" };
+  }
+
+  const supabase = getSupabase();
+
+  const fromEmail = process.env.RESEND_FROM_EMAIL;
+  if (!fromEmail) throw new Error("RESEND_FROM_EMAIL must be set");
+
+  const { html, subject, items } = await buildDigestContent(user.id);
 
   await withRetry(async () => {
     const { error: sendError } = await getResend().emails.send({
