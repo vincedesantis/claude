@@ -184,16 +184,26 @@ async function buildSpotlights(groups: CompanyGroup[]): Promise<SpotlightEntry[]
         sortKey = 0;
       }
 
-      const blurb = await generateSpotlight(
-        group.ticker,
-        group.companyName,
-        group.items.map((item) => ({
-          headline: item.headline,
-          summary_text: item.summary_text,
-          source_url: item.source_url,
-        })),
+      // With no real news to work from — just a bare price signal — there's
+      // nothing to legitimately synthesize. Calling the model here risks it
+      // inventing company details from ticker pattern-matching alone (this
+      // is exactly what happened with BIRK), so skip it entirely instead.
+      const hasRealNews = group.items.some(
+        (item) => item.event_type === "material" || item.event_type === "pr",
       );
-      const allowedUrls = new Set(group.items.map((item) => item.source_url));
+
+      const blurb = hasRealNews
+        ? await generateSpotlight(
+            group.ticker,
+            group.companyName,
+            group.items.map((item) => ({
+              headline: item.headline,
+              summary_text: item.summary_text,
+              source_url: item.source_url,
+            })),
+          )
+        : `${group.companyName} moved today, but no specific news was found explaining the change.`;
+      const allowedUrls = hasRealNews ? new Set(group.items.map((item) => item.source_url)) : new Set<string>();
 
       return { ticker: group.ticker, companyName: group.companyName, headerText, isUp, blurb, sortKey, allowedUrls };
     }),

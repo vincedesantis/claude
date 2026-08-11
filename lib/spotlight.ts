@@ -20,6 +20,8 @@ const SYSTEM_PROMPT = `You write a short "Stock Spotlight" blurb for a personal 
 
 Link specific phrases inline using markdown syntax, e.g. "after [the company's founder](https://example.com/article) built a stake". Use ONLY the exact URLs given to you below, one per source item — never invent or alter a URL. Link the specific claim that came from that source, not the whole sentence. Not every clause needs a link — only the ones tied to a specific source below.
 
+Hard rule: use ONLY facts stated in the items given to you below. Never state or imply anything about the company — its industry, sector, business description, or full legal name — that isn't explicitly present in that context, even if you think you recognize the ticker. If the given items don't say what industry or business the company is in, don't guess or mention one.
+
 Hard rule: never use investment or trading advice/recommendation language — no "buy", "sell", "hold", "should", "recommend", and no price targets or opinions.
 
 Respond with only the blurb text (with inline markdown links where appropriate). No headline, no ticker, no surrounding quotes — just the paragraph.`;

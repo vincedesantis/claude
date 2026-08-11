@@ -39,7 +39,12 @@ async function handleMonitor(request: NextRequest) {
 
     for (const company of companies) {
       try {
-        itemsLogged += await monitorCompany(company);
+        const result = await monitorCompany(company);
+        itemsLogged += result.itemsLogged;
+        for (const warning of result.warnings) {
+          console.error(`monitor warning for ${company.ticker}: ${warning}`);
+          failures.push({ ticker: company.ticker, message: warning });
+        }
       } catch (error) {
         console.error(`monitor failed for ${company.ticker}`, error);
         failures.push({ ticker: company.ticker, message: errorMessage(error) });

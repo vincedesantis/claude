@@ -1,4 +1,5 @@
 import { getSupabase } from "./supabase";
+import { fetchCompanyProfile } from "./finnhub";
 
 const TICKER_PATTERN = /^[A-Z0-9.\-]{1,10}$/;
 
@@ -19,11 +20,21 @@ export async function listWatchlist(userId: string) {
 }
 
 export async function addToWatchlist(userId: string, ticker: string) {
-  // company_name is set to the ticker for now; Phase 2's Finnhub integration
-  // resolves the real company name at monitoring time.
+  // Best-effort real company name lookup — fall back to the ticker if
+  // Finnhub doesn't have it or the request fails, rather than blocking the
+  // add. monitorCompany() self-heals this later if it's still just the
+  // ticker by the next monitoring run.
+  let companyName = ticker;
+  try {
+    const profile = await fetchCompanyProfile(ticker);
+    if (profile.name) companyName = profile.name;
+  } catch (error) {
+    console.error(`company profile lookup failed for ${ticker}`, error);
+  }
+
   const { data, error } = await getSupabase()
     .from("watchlist_companies")
-    .insert({ user_id: userId, ticker, company_name: ticker })
+    .insert({ user_id: userId, ticker, company_name: companyName })
     .select("id, ticker, company_name, added_at")
     .single();
 

@@ -1,5 +1,5 @@
 import { getSupabase } from "./supabase";
-import { fetchCompanyNews, fetchQuote } from "./finnhub";
+import { fetchCompanyNews, fetchQuote, fetchCompanyProfile } from "./finnhub";
 import { classifyNewsItems } from "./classify";
 import { summarizeEvents } from "./summarize";
 import { checkFiftyTwoWeek, recordCloseAndCheckMovingAverage } from "./technicals";
@@ -9,6 +9,7 @@ const PRICE_TRIGGER_THRESHOLD_PCT = 3; // daily close vs. previous close, not in
 type WatchlistCompany = {
   id: string;
   ticker: string;
+  company_name: string;
   added_at: string;
 };
 
@@ -22,6 +23,11 @@ type NewsEventRow = {
   summary_text?: string;
 };
 
+export type MonitorResult = {
+  itemsLogged: number;
+  warnings: string[];
+};
+
 function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -30,15 +36,45 @@ function yahooFinanceUrl(ticker: string): string {
   return `https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}`;
 }
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// addToWatchlist() resolves the real name at add-time, but rows created
+// before that existed (or where the lookup failed then) are still stuck on
+// the ticker as a placeholder — self-heal those here so digests eventually
+// show real company names instead of leaving it permanently unresolved.
+async function resolveCompanyNameIfNeeded(
+  company: WatchlistCompany,
+  warnings: string[],
+): Promise<void> {
+  if (company.company_name !== company.ticker) return;
+
+  try {
+    const profile = await fetchCompanyProfile(company.ticker);
+    if (profile.name && profile.name !== company.ticker) {
+      const { error } = await getSupabase()
+        .from("watchlist_companies")
+        .update({ company_name: profile.name })
+        .eq("id", company.id);
+      if (error) throw error;
+    }
+  } catch (error) {
+    warnings.push(`company name resolution failed for ${company.ticker}: ${errorMessage(error)}`);
+  }
+}
+
 // Monitors one company: pulls news + price since the last logged event,
 // checks the price-based triggers (daily move, 52-week high/low, 200-day MA
 // cross), classifies news, and logs qualifying items. General news only
 // gets surfaced on a day one of the price triggers fired — earnings and
 // corporate actions (M&A, exec changes, regulatory) are always surfaced
-// regardless of price action. Returns the number of news_events rows
-// inserted.
-export async function monitorCompany(company: WatchlistCompany): Promise<number> {
+// regardless of price action.
+export async function monitorCompany(company: WatchlistCompany): Promise<MonitorResult> {
   const supabase = getSupabase();
+  const warnings: string[] = [];
+
+  await resolveCompanyNameIfNeeded(company, warnings);
 
   const { data: latestEvent, error: latestError } = await supabase
     .from("news_events")
@@ -98,7 +134,8 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
   }
 
   // Best-effort: missing/unavailable data here shouldn't fail the whole
-  // ticker's check, just skip that particular signal.
+  // ticker's check, just skip that particular signal — but still surface it
+  // as a warning instead of only a console.error nobody will see.
   let fiftyTwoWeekFired = false;
   try {
     for (const signal of await checkFiftyTwoWeek(company.ticker)) {
@@ -113,7 +150,7 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
       });
     }
   } catch (error) {
-    console.error(`52-week high/low check failed for ${company.ticker}`, error);
+    warnings.push(`52-week high/low check failed for ${company.ticker}: ${errorMessage(error)}`);
   }
 
   let maSignalFired = false;
@@ -132,7 +169,7 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
       }
     }
   } catch (error) {
-    console.error(`200-day moving average check failed for ${company.ticker}`, error);
+    warnings.push(`200-day moving average check failed for ${company.ticker}: ${errorMessage(error)}`);
   }
 
   // Based on the underlying condition, not just what got newly inserted —
@@ -152,23 +189,24 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
     ? `A price move occurred today (${priceChangePct !== null ? `${priceChangePct.toFixed(1)}% vs. previous close` : "52-week high/low or moving-average cross"}).`
     : "No qualifying price move occurred today.";
 
-  const classifications = await classifyNewsItems(company.ticker, candidates, moveContext);
+  const decisions = await classifyNewsItems(company.ticker, candidates, moveContext);
 
   candidates.forEach((item, i) => {
-    const label = classifications[i];
-    if (label === "discard") return;
-    if (label === "move_related" && !isMoveDay) return; // only on days the stock actually moved
+    const decision = decisions[i];
+    if (decision.label === "discard") return;
+    if (decision.duplicateOfIndex !== null) return; // same story as an earlier item in this batch
+    if (decision.label === "move_related" && !isMoveDay) return; // only on days the stock actually moved
 
     rows.push({
       company_id: company.id,
-      event_type: label === "move_related" ? "pr" : "material",
+      event_type: decision.label === "move_related" ? "pr" : "material",
       headline: item.headline,
       source_url: item.url,
       published_at: new Date(item.datetime * 1000).toISOString(),
     });
   });
 
-  if (rows.length === 0) return 0;
+  if (rows.length === 0) return { itemsLogged: 0, warnings };
 
   const summaries = await summarizeEvents(
     company.ticker,
@@ -185,5 +223,5 @@ export async function monitorCompany(company: WatchlistCompany): Promise<number>
   const { error: insertError } = await supabase.from("news_events").insert(rows);
   if (insertError) throw insertError;
 
-  return rows.length;
+  return { itemsLogged: rows.length, warnings };
 }

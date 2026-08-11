@@ -78,3 +78,12 @@ export async function fetchBasicFinancials(ticker: string): Promise<FinnhubBasic
   const url = `${FINNHUB_BASE}/stock/metric?symbol=${encodeURIComponent(ticker)}&metric=all&token=${getApiKey()}`;
   return (await finnhubGet(url)) as FinnhubBasicFinancials;
 }
+
+export type FinnhubCompanyProfile = {
+  name?: string;
+};
+
+export async function fetchCompanyProfile(ticker: string): Promise<FinnhubCompanyProfile> {
+  const url = `${FINNHUB_BASE}/stock/profile2?symbol=${encodeURIComponent(ticker)}&token=${getApiKey()}`;
+  return (await finnhubGet(url)) as FinnhubCompanyProfile;
+}
