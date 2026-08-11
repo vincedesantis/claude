@@ -66,17 +66,13 @@ function formatDate(date: Date): string {
 }
 
 // Daily close for every watchlist ticker is already recorded (for the
-// 200-day MA calc), so tickers that didn't clear the alert bar can still be
-// shown with their day's move, using data already on hand — no extra
-// Finnhub calls needed.
-async function fetchOtherTickerMoves(
-  userId: string,
-  excludeCompanyIds: Set<string>,
-): Promise<TickerMove[]> {
+// 200-day MA calc), so the full watchlist can be shown with each ticker's
+// day's move — including ones that also have a headline above — using data
+// already on hand, no extra Finnhub calls needed.
+async function fetchAllTickerMoves(userId: string): Promise<TickerMove[]> {
   const supabase = getSupabase();
-  const allCompanies = await listWatchlist(userId);
-  const otherCompanies = allCompanies.filter((c) => !excludeCompanyIds.has(c.id));
-  if (otherCompanies.length === 0) return [];
+  const companies = await listWatchlist(userId);
+  if (companies.length === 0) return [];
 
   const fiveDaysAgo = new Date();
   fiveDaysAgo.setUTCDate(fiveDaysAgo.getUTCDate() - 5);
@@ -86,7 +82,7 @@ async function fetchOtherTickerMoves(
     .select("company_id, trade_date, close")
     .in(
       "company_id",
-      otherCompanies.map((c) => c.id),
+      companies.map((c) => c.id),
     )
     .gte("trade_date", formatDate(fiveDaysAgo))
     .order("trade_date", { ascending: false });
@@ -99,7 +95,7 @@ async function fetchOtherTickerMoves(
     byCompany.set(row.company_id, list);
   }
 
-  return otherCompanies.map((company) => {
+  return companies.map((company) => {
     const [latest, previous] = byCompany.get(company.id) ?? [];
     const changePct =
       latest && previous && previous.close > 0
@@ -313,7 +309,7 @@ function renderDigestHtml(groups: CompanyGroup[], spotlightHtml: string, otherTi
     </div>`;
 }
 
-function renderOtherTickersHtml(moves: TickerMove[]): string {
+function renderWatchlistSummaryHtml(moves: TickerMove[]): string {
   if (moves.length === 0) return "";
 
   const rows = moves
@@ -331,7 +327,7 @@ function renderOtherTickersHtml(moves: TickerMove[]): string {
 
   return `
     <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e4e4e7;">
-      <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:#71717a;margin-bottom:8px;">Also on your watchlist</h2>
+      <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:0.04em;color:#71717a;margin-bottom:8px;">Your Watchlist</h2>
       <table style="width:100%;border-collapse:collapse;">${rows}</table>
     </div>`;
 }
@@ -350,11 +346,8 @@ async function buildDigestContent(
 ): Promise<{ html: string; subject: string; items: UnsentItem[] }> {
   const items = await fetchUnsentItems(userId);
 
-  const otherTickerMoves = await fetchOtherTickerMoves(
-    userId,
-    new Set(items.map((item) => item.company_id)),
-  );
-  const otherTickersHtml = renderOtherTickersHtml(otherTickerMoves);
+  const allTickerMoves = await fetchAllTickerMoves(userId);
+  const watchlistSummaryHtml = renderWatchlistSummaryHtml(allTickerMoves);
 
   const groups = groupByCompany(items);
   const spotlights = items.length > 0 ? await buildSpotlights(groups) : [];
@@ -362,8 +355,8 @@ async function buildDigestContent(
 
   const html =
     items.length > 0
-      ? renderDigestHtml(groups, spotlightHtml, otherTickersHtml)
-      : renderQuietPeriodHtml(otherTickersHtml);
+      ? renderDigestHtml(groups, spotlightHtml, watchlistSummaryHtml)
+      : renderQuietPeriodHtml(watchlistSummaryHtml);
   const subject =
     items.length > 0
       ? `Investor News Digest — ${items.length} item${items.length === 1 ? "" : "s"}`
