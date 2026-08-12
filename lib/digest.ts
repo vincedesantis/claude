@@ -275,15 +275,20 @@ function renderSpotlightHtml(entries: SpotlightEntry[]): string {
 function renderDigestHtml(groups: CompanyGroup[], spotlightHtml: string, otherTickersHtml: string): string {
   const sections = groups
     .map((group) => {
-      const rows = group.items
+      // Price-based signals (price move, 52-week high/low, MA cross) are
+      // already covered by this company's Stock Spotlight header above —
+      // repeating them here as their own bullet is redundant. Only the
+      // actual news items (material/pr) get an itemized entry.
+      const detailItems = group.items.filter(
+        (item) => !PRICE_EVENT_TYPES.includes(item.event_type),
+      );
+      if (detailItems.length === 0) return "";
+
+      const rows = detailItems
         .map((item) => {
-          const priceNote =
-            item.price_change_pct != null
-              ? ` (${item.price_change_pct > 0 ? "+" : ""}${item.price_change_pct}%)`
-              : "";
           return `
             <div style="margin-bottom:16px;">
-              <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:#71717a;">${escapeHtml(EVENT_LABELS[item.event_type])}${priceNote}</div>
+              <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:#71717a;">${escapeHtml(EVENT_LABELS[item.event_type])}</div>
               <div style="font-weight:600;font-size:15px;margin:2px 0;">
                 <a href="${escapeHtml(item.source_url)}" style="color:#111827;text-decoration:none;">${escapeHtml(item.headline)}</a>
               </div>
