@@ -91,17 +91,33 @@ export default function Dashboard({
   }
 
   async function handleRemove(id: string) {
+    setError(null);
+    const removed = companies.find((c) => c.id === id);
     setCompanies((prev) => prev.filter((c) => c.id !== id));
-    await fetch(`/api/watchlist/${id}`, { method: "DELETE" });
+
+    const res = await fetch(`/api/watchlist/${id}`, { method: "DELETE" });
+    if (!res.ok && removed) {
+      // Roll back — otherwise the dashboard silently drifts out of sync
+      // with the database until the next reload.
+      setCompanies((prev) => [...prev, removed].sort((a, b) => a.added_at.localeCompare(b.added_at)));
+      setError(`failed to remove ${removed.ticker}`);
+    }
   }
 
   async function handleCadenceChange(value: Cadence) {
+    setError(null);
+    const previous = cadence;
     setCadenceState(value);
-    await fetch("/api/settings", {
+
+    const res = await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cadence: value }),
     });
+    if (!res.ok) {
+      setCadenceState(previous);
+      setError("failed to update cadence");
+    }
   }
 
   return (
