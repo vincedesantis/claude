@@ -87,3 +87,21 @@ export async function fetchCompanyProfile(ticker: string): Promise<FinnhubCompan
   const url = `${FINNHUB_BASE}/stock/profile2?symbol=${encodeURIComponent(ticker)}&token=${getApiKey()}`;
   return (await finnhubGet(url)) as FinnhubCompanyProfile;
 }
+
+type FinnhubSearchResult = {
+  result?: { symbol: string; description: string; type: string }[];
+};
+
+export type SymbolMatch = { ticker: string; companyName: string };
+
+// Section 6.1: "Add company by ticker or name search." Restricted to Common
+// Stock so a name search doesn't surface warrants/ADRs/etc. that would
+// silently fail the rest of the pipeline (quotes, basic financials).
+export async function searchSymbols(query: string): Promise<SymbolMatch[]> {
+  const url = `${FINNHUB_BASE}/search?q=${encodeURIComponent(query)}&token=${getApiKey()}`;
+  const data = (await finnhubGet(url)) as FinnhubSearchResult;
+  return (data.result ?? [])
+    .filter((r) => r.type === "Common Stock" && !r.symbol.includes("."))
+    .slice(0, 8)
+    .map((r) => ({ ticker: r.symbol, companyName: r.description }));
+}

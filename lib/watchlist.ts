@@ -19,17 +19,21 @@ export async function listWatchlist(userId: string) {
   return data;
 }
 
-export async function addToWatchlist(userId: string, ticker: string) {
-  // Best-effort real company name lookup — fall back to the ticker if
-  // Finnhub doesn't have it or the request fails, rather than blocking the
-  // add. monitorCompany() self-heals this later if it's still just the
-  // ticker by the next monitoring run.
-  let companyName = ticker;
-  try {
-    const profile = await fetchCompanyProfile(ticker);
-    if (profile.name) companyName = profile.name;
-  } catch (error) {
-    console.error(`company profile lookup failed for ${ticker}`, error);
+export async function addToWatchlist(userId: string, ticker: string, knownCompanyName?: string) {
+  // If the caller already resolved a name (e.g. the user picked this exact
+  // result from the name-search dropdown), trust it and skip the lookup.
+  // Otherwise best-effort look it up — fall back to the ticker if Finnhub
+  // doesn't have it or the request fails, rather than blocking the add.
+  // monitorCompany() self-heals this later if it's still just the ticker by
+  // the next monitoring run.
+  let companyName = knownCompanyName?.trim() || ticker;
+  if (!knownCompanyName) {
+    try {
+      const profile = await fetchCompanyProfile(ticker);
+      if (profile.name) companyName = profile.name;
+    } catch (error) {
+      console.error(`company profile lookup failed for ${ticker}`, error);
+    }
   }
 
   const { data, error } = await getSupabase()

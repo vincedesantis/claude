@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const rawTicker = typeof body?.ticker === "string" ? body.ticker : "";
   const ticker = normalizeTicker(rawTicker);
+  const companyName = typeof body?.companyName === "string" ? body.companyName : undefined;
 
   if (!ticker) {
     return NextResponse.json({ error: "invalid ticker" }, { status: 400 });
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
   const user = await getOrCreateUser();
 
   try {
-    const company = await addToWatchlist(user.id, ticker);
+    const company = await addToWatchlist(user.id, ticker, companyName);
     return NextResponse.json(company);
   } catch (error) {
     if (isUniqueViolation(error)) {
