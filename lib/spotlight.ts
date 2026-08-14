@@ -51,7 +51,7 @@ export async function generateSpotlight(
   return enforceGuardrail(text, items);
 }
 
-function enforceGuardrail(text: string, items: SpotlightItem[]): string {
+export function enforceGuardrail(text: string, items: SpotlightItem[]): string {
   if (text && !FORBIDDEN_LANGUAGE.test(text)) return text;
   const fallback = items.map((item) => item.summary_text ?? item.headline).join(" ");
   if (fallback && !FORBIDDEN_LANGUAGE.test(fallback)) return fallback;

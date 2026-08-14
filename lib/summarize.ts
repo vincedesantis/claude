@@ -72,7 +72,7 @@ function safeParseSummaries(text: string, expectedLength: number): (string | nul
 // Deterministic, code-level enforcement of the advice-language guardrail —
 // never trust the model's own compliance. Falls back to the raw headline,
 // and then to a guaranteed-safe generic line, if needed.
-function enforceGuardrail(
+export function enforceGuardrail(
   summary: string | null,
   event: SummarizableEvent,
   ticker: string,

@@ -40,6 +40,17 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// Pure so Test Cases 1-2 (Section 10 of PRD.md) can assert against the real
+// production logic instead of a reimplementation of it.
+export function computePriceMove(
+  quote: { c: number; pc: number },
+  thresholdPct: number = PRICE_TRIGGER_THRESHOLD_PCT,
+): { priceChangePct: number | null; priceTriggered: boolean } {
+  const priceChangePct = quote.pc > 0 ? ((quote.c - quote.pc) / quote.pc) * 100 : null;
+  const priceTriggered = priceChangePct !== null && Math.abs(priceChangePct) > thresholdPct;
+  return { priceChangePct, priceTriggered };
+}
+
 // addToWatchlist() resolves the real name at add-time, but rows created
 // before that existed (or where the lookup failed then) are still stuck on
 // the ticker as a placeholder — self-heal those here so digests eventually
@@ -117,9 +128,7 @@ export async function monitorCompany(company: WatchlistCompany): Promise<Monitor
   if (todaysPriceEventsError) throw todaysPriceEventsError;
   const alreadyLoggedToday = new Set((todaysPriceEvents ?? []).map((e) => e.event_type));
 
-  const priceChangePct = quote.pc > 0 ? ((quote.c - quote.pc) / quote.pc) * 100 : null;
-  const priceTriggered =
-    priceChangePct !== null && Math.abs(priceChangePct) > PRICE_TRIGGER_THRESHOLD_PCT;
+  const { priceChangePct, priceTriggered } = computePriceMove(quote);
 
   if (priceTriggered && priceChangePct !== null && !alreadyLoggedToday.has("price_trigger")) {
     const rounded = Math.round(priceChangePct * 100) / 100;

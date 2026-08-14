@@ -14,7 +14,7 @@ const CADENCE_DAYS: Record<Exclude<Cadence, "daily">, number> = {
   monthly: 30,
 };
 
-type UnsentItem = {
+export type UnsentItem = {
   id: string;
   event_type: "material" | "pr" | "price_trigger" | "52w_high" | "52w_low" | "ma200_cross";
   headline: string;
@@ -105,9 +105,9 @@ async function fetchAllTickerMoves(userId: string): Promise<TickerMove[]> {
   });
 }
 
-type CompanyGroup = { ticker: string; companyName: string; items: UnsentItem[] };
+export type CompanyGroup = { ticker: string; companyName: string; items: UnsentItem[] };
 
-function groupByCompany(items: UnsentItem[]): CompanyGroup[] {
+export function groupByCompany(items: UnsentItem[]): CompanyGroup[] {
   const groups = new Map<string, CompanyGroup>();
   for (const item of items) {
     let group = groups.get(item.company_id);
@@ -217,7 +217,7 @@ const EVENT_LABELS: Record<UnsentItem["event_type"], string> = {
   ma200_cross: "200-day MA cross",
 };
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -229,7 +229,7 @@ function escapeHtml(value: string): string {
 // but its output is never trusted as-is: only URLs we actually supplied for
 // this company are rendered as real links (allowedUrls), everything else —
 // invented or altered URLs, or plain text — falls back to plain escaped text.
-function renderInlineLinks(text: string, allowedUrls: Set<string>): string {
+export function renderInlineLinks(text: string, allowedUrls: Set<string>): string {
   const linkPattern = /\[([^\]]+)\]\(([^)]+)\)/g;
   let result = "";
   let lastIndex = 0;
@@ -272,7 +272,7 @@ function renderSpotlightHtml(entries: SpotlightEntry[]): string {
     </div>`;
 }
 
-function renderDigestHtml(groups: CompanyGroup[], spotlightHtml: string, otherTickersHtml: string): string {
+export function renderDigestHtml(groups: CompanyGroup[], spotlightHtml: string, otherTickersHtml: string): string {
   const sections = groups
     .map((group) => {
       // Price-based signals (price move, 52-week high/low, MA cross) are
@@ -337,7 +337,7 @@ function renderWatchlistSummaryHtml(moves: TickerMove[]): string {
     </div>`;
 }
 
-function renderQuietPeriodHtml(otherTickersHtml: string): string {
+export function renderQuietPeriodHtml(otherTickersHtml: string): string {
   return `
     <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827;">
       <h1 style="font-size:20px;">Investor News Digest</h1>

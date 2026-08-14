@@ -70,15 +70,22 @@ export async function recordCloseAndCheckMovingAverage(
   const yesterdayMA = average(closes.slice(1, MA_WINDOW + 1));
   const yesterdayClose = closes[1];
 
-  if (yesterdayClose <= yesterdayMA && todayClose > todayMA) {
-    return { event_type: "ma200_cross", headline: `${ticker} crossed above its 200-day moving average` };
-  }
-  if (yesterdayClose >= yesterdayMA && todayClose < todayMA) {
-    return { event_type: "ma200_cross", headline: `${ticker} crossed below its 200-day moving average` };
-  }
-  return null;
+  const cross = detectMaCross(yesterdayClose, yesterdayMA, todayClose, todayMA);
+  return cross ? { event_type: "ma200_cross", headline: `${ticker} crossed ${cross} its 200-day moving average` } : null;
 }
 
 function average(values: number[]): number {
   return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+// Pure so the cross condition itself can be tested without mocking Supabase.
+export function detectMaCross(
+  yesterdayClose: number,
+  yesterdayMA: number,
+  todayClose: number,
+  todayMA: number,
+): "above" | "below" | null {
+  if (yesterdayClose <= yesterdayMA && todayClose > todayMA) return "above";
+  if (yesterdayClose >= yesterdayMA && todayClose < todayMA) return "below";
+  return null;
 }
