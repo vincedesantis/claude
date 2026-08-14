@@ -1,7 +1,7 @@
 # PRD: Investor News Digest
 **Author:** Vince
-**Status:** Execution-ready v2 — build spec for Claude Code
-**Last updated:** July 26, 2026
+**Status:** v1 built (Phases 0-6 complete) — this doc is kept in sync with the shipped app, not just the original plan
+**Last updated:** August 14, 2026
 ---
 ## How to Use This PRD
 1. Put this file at the root of a new project folder as `PRD.md`. Also save the companion `CLAUDE.md` (provided alongside this file) in the same folder — it carries the tech stack and guardrails forward into every session so Claude Code doesn't re-derive or drift from them.
@@ -21,7 +21,7 @@ Vince holds positions in multiple public companies and can't reliably keep up wi
 **Definition of done for v1:** Vince adds a ticker, the system silently monitors it, and on his chosen cadence he gets one email that fully replaces checking any other source for that period.
 ## 4. Non-Goals — Hard Guardrails
 Claude Code should treat these as boundaries to actively check work against, not areas to improvise:
-- **No investment or trading advice/recommendations.** Report facts only. No "buy/sell/hold," no price targets, no opinions. Enforce via prompt constraints on the summarization step (Section 7.3) and validate with the test in Section 10.
+- **No investment or trading advice/recommendations.** Report facts only. No "buy/sell/hold," no price targets, no opinions. Enforce via prompt constraints on the summarization step (Section 6.3) and validate with the test in Section 10.
 - **No trade execution or brokerage connection.** Read-only, always.
 - **No real-time push notifications.** Digest only, on the user's chosen cadence — this is the product's core value prop, not a missing feature.
 - **No storing or reselling personal data.** Watchlist + one email address is the entire personal data surface. No third-party sharing, no analytics resale.
@@ -44,42 +44,71 @@ Monitoring runs **daily regardless of digest cadence** — a monthly digest stil
 - Anything outside these three buckets is discarded, not logged.
 ## 6. Functional Requirements
 ### 6.1 Watchlist Management (Dashboard)
-- Add company by ticker or name search.
+- Add company by ticker or name search — name search backed by Finnhub's symbol search (`GET /api/watchlist/search?q=`), filtered to Common Stock results, debounced autocomplete in the dashboard, capped at 8 matches.
 - Remove a company.
 - View current watchlist (ticker, company name only — no archive, per Section 4).
 - Set digest cadence: daily / weekly / biweekly / monthly (single account-wide setting).
 - No login.
 ### 6.2 Monitoring & Detection (daily cron job)
 - For each watchlist ticker: pull news since last check, pull latest close price.
-- Apply Section 5.2 filter logic.
+- Apply Section 5.2 filter logic, including the 52-week high/low and 200-day MA cross triggers (Section 5.1) and LLM relevance/duplicate classification for general news.
 - Log qualifying items: ticker, headline, source URL, event type, timestamp, price_change_pct if applicable.
+- Records a daily close per company to `price_history` regardless of whether anything fired — feeds the 200-day MA calc and the watchlist summary in 6.4.
+- Skips entirely on weekends (Saturday/Sunday, UTC-based) — markets are closed, nothing to check.
+- Self-heals `company_name` on watchlist rows still stuck on the ticker placeholder (e.g. added before name resolution existed, or a lookup failed at add-time).
+- Partial per-ticker failures (a bad Finnhub response, a classification error) don't abort the whole run — the failing ticker is skipped and reported, other tickers still get checked.
 ### 6.3 Summarization
 - Each newly logged item → 1-2 sentence "why it matters" via LLM.
-- Hard constraint: no recommendation/advice language (Section 4). Validate against Section 10 test case.
+- Hard constraint: no recommendation/advice language (Section 4). Enforced twice: prompted for, then checked in code against the regex in Section 10 Test 3 — the model's own compliance is never trusted alone. On a guardrail trip or a parse failure, falls back to the raw headline, then to a guaranteed-safe generic line.
 ### 6.4 Digest Compilation & Delivery
 - On scheduled send day: pull all unsent items, group by company, render as HTML email, send, mark items sent.
 - If zero qualifying items: send the "quiet period" note (Section 5.1).
+- Skips entirely on weekends, same as monitoring.
+- **Stock Spotlight:** for each company with a price-based trigger that cycle, an AI-written 2-4 sentence narrative synthesizing that day's items (Claude Haiku), shown above the itemized headlines. Sourced inline via markdown links restricted to URLs actually supplied for that company — a model-invented or altered URL is rendered as plain text, never as a link. If the only signal is a bare price move with no real news behind it, the spotlight says so rather than letting the model guess at why (an earlier failure mode: an LLM inventing company/industry details from ticker pattern-matching alone).
+- **Your Watchlist:** a summary table at the bottom of every digest — including quiet-period sends — showing every watchlist ticker's move since the prior recorded close, using `price_history` already on hand (no extra Finnhub calls).
+- Itemized headline entries only cover actual news (`material`/`pr`); price-based signals (`price_trigger`/`52w_high`/`52w_low`/`ma200_cross`) are represented by the Spotlight header, not repeated as their own line item.
+### 6.5 Operational Visibility
+- **Digest preview:** `GET /api/preview-digest` renders exactly what the next real send would contain — same unauthenticated exposure level as the rest of the dashboard (Section 4: no login in v1) — without sending anything or marking items as sent. Bypasses the weekend/cadence gates, since the point is to preview regardless of whether today is actually a scheduled send day.
+- **Failure alerts:** any cron failure (whole-run or per-ticker) sends a short plain-text alert email so a bad day is visible without checking Vercel's logs, instead of only a `console.error` nobody reads.
 ## 7. API Contracts
-All routes under `/app/api`. Cron routes are internal — secured with a `CRON_SECRET` header, not user-facing.
+All routes under `/app/api`. Cron routes are internal — accept either the `x-cron-secret` header (manual/API testing) or the `Authorization: Bearer $CRON_SECRET` header Vercel attaches automatically to scheduled runs. Non-cron routes are unauthenticated, matching the no-login v1 scope (Section 4) — the dashboard has no user to authenticate.
 ```
 POST   /api/watchlist
-  body: { "ticker": "AAPL" }
+  body: { "ticker": "AAPL", "companyName"?: "Apple Inc." }  // companyName optional — set when
+                                                              // the client already resolved it via
+                                                              // /api/watchlist/search, skipping a
+                                                              // redundant Finnhub lookup
   200:  { "id": "uuid", "ticker": "AAPL", "company_name": "Apple Inc.", "added_at": "iso8601" }
-  400:  { "error": "invalid ticker" }
+  400:  { "error": "invalid ticker" } | { "error": "ticker already on watchlist" }
 GET    /api/watchlist
   200:  [{ "id": "uuid", "ticker": "AAPL", "company_name": "Apple Inc.", "added_at": "iso8601" }, ...]
 DELETE /api/watchlist/:id
   204
+GET    /api/watchlist/search?q=apple
+  200:  [{ "ticker": "AAPL", "companyName": "Apple Inc" }, ...]   // up to 8 matches, Common Stock only
+GET    /api/settings
+  200:  { "cadence": "weekly" }
 PUT    /api/settings
   body: { "cadence": "weekly" }   // daily | weekly | biweekly | monthly
   200:  { "cadence": "weekly" }
-POST   /api/cron/monitor          // triggered by Vercel Cron, daily
-  headers: { "x-cron-secret": "..." }
+  400:  { "error": "invalid cadence" }
+GET    /api/health                // Phase 0 acceptance check: confirms the deployed app can reach Supabase
+  200:  { "db": "ok", "users_count": 1 }
+  500:  { "db": "unreachable", "error": "..." }
+GET    /api/preview-digest        // renders the next digest without sending it or marking anything sent
+  200:  text/html
+GET|POST /api/cron/monitor        // triggered by Vercel Cron, daily (Vercel sends GET; POST also supported)
+  headers: { "x-cron-secret": "..." }  // or Authorization: Bearer <CRON_SECRET>
   200:  { "tickers_checked": 8, "items_logged": 2 }
-POST   /api/cron/digest           // triggered by Vercel Cron, daily (checks internally if today matches cadence)
-  headers: { "x-cron-secret": "..." }
+  200:  { "tickers_checked": 0, "items_logged": 0, "skipped": "market closed (weekend)" }
+  200:  { "tickers_checked": 8, "items_logged": 2, "failures": [{ "ticker": "AAPL", "message": "..." }] }
+  401:  { "error": "unauthorized" }
+  500:  { "error": "monitor run failed" }   // also triggers a failure alert email (Section 6.5)
+GET|POST /api/cron/digest         // triggered by Vercel Cron, daily (checks internally if today matches cadence)
+  headers: { "x-cron-secret": "..." }  // or Authorization: Bearer <CRON_SECRET>
   200:  { "sent": true, "item_count": 5 }
-  200:  { "sent": false, "reason": "not a scheduled send day" }
+  200:  { "sent": false, "reason": "not a scheduled send day" | "market closed (weekend)" }
+  500:  { "error": "digest run failed" }   // also triggers a failure alert email (Section 6.5)
 ```
 ## 8. Data Model
 ```
@@ -112,6 +141,7 @@ Each phase should be verified working before the next starts. This is the sequen
 | 5 | P1 | Empty-period "quiet period" handling | Trigger digest with zero unsent items; confirm fallback email sends |
 | 6 | P1 | Error handling + retry on API failures + basic logging so a silent failure day is visible | Kill the Finnhub key temporarily; confirm the failure is logged, not swallowed |
 | 7 | P2 (explicitly deferred) | Multi-user auth, digest archive, per-company cadence, intraday price data | Not built in v1 — flag if a session drifts toward this |
+**Status: Phases 0-6 complete**, plus scope explicitly within the P0-P1 functional requirements that shipped after the initial pass: name search (6.1), 52-week high/low and 200-day MA triggers (5.1/5.2), Stock Spotlight and the watchlist summary section (6.4), digest preview and failure alerts (6.5), and an automated test suite for Section 10 (`npm test`, `lib/__tests__/`) replacing the manual spot-checks the acceptance checks above originally called for.
 ## 10. Test Cases
 | # | Behavior | Input | Expected | Assertion |
 |---|---|---|---|---|
@@ -120,6 +150,7 @@ Each phase should be verified working before the next starts. This is the sequen
 | 3 | Advice-language guardrail | Any generated summary | No recommendation language | Summary text does not match `/\b(buy|sell|should|recommend|hold)\b/i` |
 | 4 | Digest grouping | 3 unsent items across 2 companies | Digest groups by company | Rendered HTML contains 2 distinct company headers |
 | 5 | Empty period | 0 unsent items on a scheduled send day | "Quiet period" email sent | Email sent with fallback copy, not skipped |
+Automated in `lib/__tests__/` (`npm test`) against the real production logic — not a reimplementation of it. Test 1/2 run against `computePriceMove` (`lib/monitor.ts`); Test 3 against `enforceGuardrail` in both `lib/summarize.ts` and `lib/spotlight.ts` (the Stock Spotlight narrative carries the same guardrail); Test 4/5 against `groupByCompany` / `renderDigestHtml` / `renderQuietPeriodHtml` (`lib/digest.ts`).
 ## 11. Design / UX
 - **Direction:** clean, minimal — restrained fintech-newsletter feel, not a trading terminal.
 - **Dashboard:** one page. Ticker input, plain list, one cadence dropdown. No widgets, no charts.

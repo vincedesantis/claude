@@ -25,7 +25,7 @@ CRON_SECRET=
 
 Non-negotiable guardrails
 
-* No investment/trading advice or recommendation language anywhere in generated summaries
+* No investment/trading advice or recommendation language anywhere in generated summaries — this covers both the per-item "why it matters" summaries and the Stock Spotlight narrative blurb, enforced in code (not just prompted for) in `lib/summarize.ts` and `lib/spotlight.ts`, with automated regression tests in `lib/__tests__/` (`npm test`)
 * No trade execution or brokerage integration
 * No real-time push notifications — digest only
 * No login/auth in v1 (single user, no multi-tenant UI)
@@ -42,6 +42,6 @@ Locked decisions (don't re-ask)
 * Schedule target: monitor runs at market close (1pm Pacific), digest at 3pm Pacific. Vercel Cron uses fixed UTC times with no DST awareness, so vercel.json's UTC times need a manual one-hour adjustment twice a year (currently set for PDT — recheck after DST changes)
 
 Build order
-Follow Section 9 of PRD.md in phase order. Verify each phase's acceptance check before starting the next. Don't jump ahead.
+Follow Section 9 of PRD.md in phase order. Verify each phase's acceptance check before starting the next. Don't jump ahead. Phases 0-6 are complete — PRD.md is kept in sync with what's actually shipped (see its Section 6 for functional detail, Section 7 for the real API contracts), not just the original plan, so re-read it rather than assuming staleness.
 When in doubt
 Flag scope questions rather than guessing — especially anything that would edge toward v2 features (Section 13 of PRD.md) or violate a guardrail above.
