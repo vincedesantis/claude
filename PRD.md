@@ -139,3 +139,5 @@ instead of proceeding.
 ```
 ## 13. Explicitly Deferred (v2+)
 Per-company cadence · in-app digest archive · multi-user accounts + auth · intraday price monitoring · public launch/billing.
+
+**Pricing model (pre-decided for whenever public launch happens):** paid-from-start with a free trial, not a permanent free tier. Rationale: a free tier means carrying Resend/Supabase/Vercel costs indefinitely for non-converting users plus permanent ticker-cap enforcement work; a trial just needs an expiration date and everyone either pays or drops off. Higher signup friction is an acceptable tradeoff for this product — someone who wants a personal portfolio digest is already motivated, so filtering for real intent early is the right shape here. Not actionable until multi-user/billing (this section) is actually built.
