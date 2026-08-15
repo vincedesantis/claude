@@ -311,6 +311,7 @@ export function renderDigestHtml(groups: CompanyGroup[], spotlightHtml: string, 
       ${spotlightHtml}
       ${sections}
       ${otherTickersHtml}
+      ${DISCLAIMER_HTML}
     </div>`;
 }
 
@@ -343,8 +344,17 @@ export function renderQuietPeriodHtml(otherTickersHtml: string): string {
       <h1 style="font-size:20px;">Investor News Digest</h1>
       <p>Quiet period — nothing material this cycle.</p>
       ${otherTickersHtml}
+      ${DISCLAIMER_HTML}
     </div>`;
 }
+
+// Section 4: non-negotiable guardrail. Every digest send — real or quiet-period
+// — carries this disclaimer, regardless of what the LLM-generated content above
+// it says.
+const DISCLAIMER_HTML = `
+    <p style="margin-top:32px;padding-top:16px;border-top:1px solid #e4e4e7;font-size:12px;color:#a1a1aa;">
+      This letter is for informational purposes only and is not investment advice or a recommendation to buy, hold or sell any security ever.
+    </p>`;
 
 async function buildDigestContent(
   userId: string,

@@ -21,7 +21,7 @@ Vince holds positions in multiple public companies and can't reliably keep up wi
 **Definition of done for v1:** Vince adds a ticker, the system silently monitors it, and on his chosen cadence he gets one email that fully replaces checking any other source for that period.
 ## 4. Non-Goals — Hard Guardrails
 Claude Code should treat these as boundaries to actively check work against, not areas to improvise:
-- **No investment or trading advice/recommendations.** Report facts only. No "buy/sell/hold," no price targets, no opinions. Enforce via prompt constraints on the summarization step (Section 6.3) and validate with the test in Section 10.
+- **No investment or trading advice/recommendations.** Report facts only. No "buy/sell/hold," no price targets, no opinions. Enforce via prompt constraints on the summarization step (Section 6.3) and validate with the test in Section 10. Every digest send — real or quiet-period — also carries a fixed disclaimer footer, regardless of what the LLM-generated content above it says: *"This letter is for informational purposes only and is not investment advice or a recommendation to buy, hold or sell any security ever."* (`lib/digest.ts`, `DISCLAIMER_HTML`).
 - **No trade execution or brokerage connection.** Read-only, always.
 - **No real-time push notifications.** Digest only, on the user's chosen cadence — this is the product's core value prop, not a missing feature.
 - **No storing or reselling personal data.** Watchlist + one email address is the entire personal data surface. No third-party sharing, no analytics resale.

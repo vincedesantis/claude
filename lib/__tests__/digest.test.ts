@@ -61,6 +61,30 @@ describe("renderQuietPeriodHtml", () => {
   });
 });
 
+// Section 4: the disclaimer footer is a non-negotiable guardrail, not
+// content that depends on what qualified — every send carries it.
+describe("disclaimer footer", () => {
+  const DISCLAIMER =
+    "This letter is for informational purposes only and is not investment advice or a recommendation to buy, hold or sell any security ever.";
+
+  it("appears on a normal digest with items", () => {
+    const items: UnsentItem[] = [item({})];
+    const groups = groupByCompany(items);
+    const html = renderDigestHtml(groups, "", "");
+    expect(html).toContain(DISCLAIMER);
+  });
+
+  it("appears on a digest with zero groups", () => {
+    const html = renderDigestHtml([], "", "");
+    expect(html).toContain(DISCLAIMER);
+  });
+
+  it("appears on the quiet-period email", () => {
+    const html = renderQuietPeriodHtml("");
+    expect(html).toContain(DISCLAIMER);
+  });
+});
+
 describe("renderInlineLinks", () => {
   it("renders only allow-listed URLs as real links", () => {
     const allowed = new Set(["https://example.com/real"]);

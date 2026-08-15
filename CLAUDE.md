@@ -26,6 +26,7 @@ CRON_SECRET=
 Non-negotiable guardrails
 
 * No investment/trading advice or recommendation language anywhere in generated summaries — this covers both the per-item "why it matters" summaries and the Stock Spotlight narrative blurb, enforced in code (not just prompted for) in `lib/summarize.ts` and `lib/spotlight.ts`, with automated regression tests in `lib/__tests__/` (`npm test`)
+* Every digest email (real or quiet-period) carries a fixed disclaimer footer — "This letter is for informational purposes only and is not investment advice or a recommendation to buy, hold or sell any security ever." — regardless of what the LLM-generated content says (`lib/digest.ts`, `DISCLAIMER_HTML`)
 * No trade execution or brokerage integration
 * No real-time push notifications — digest only
 * No login/auth in v1 (single user, no multi-tenant UI)
