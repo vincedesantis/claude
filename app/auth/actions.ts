@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createAuthClient } from "@/lib/supabase-auth";
 import { getOrCreateProfile } from "@/lib/user";
 import { validateSignupInput } from "@/lib/auth-validation";
@@ -20,8 +21,19 @@ export async function signupAction(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent(validationError)}`);
   }
 
+  // Explicit, rather than relying on the Supabase project's Site URL default
+  // — makes the confirmation link land on /auth/confirm regardless of how
+  // that dashboard setting is configured. Still requires this origin to be
+  // in the project's Redirect URLs allow list (Supabase rejects anything
+  // that isn't), which is a dashboard setting this code can't set itself.
+  const origin = (await headers()).get("origin");
+
   const supabase = await createAuthClient();
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: origin ? `${origin}/auth/confirm` : undefined },
+  });
 
   if (error) {
     redirect(`/signup?error=${encodeURIComponent(error.message)}`);
@@ -34,9 +46,7 @@ export async function signupAction(formData: FormData) {
     redirect("/");
   }
 
-  redirect(
-    `/login?message=${encodeURIComponent("Account created — check your email to confirm it, then log in below.")}`,
-  );
+  redirect(`/signup/check-email?email=${encodeURIComponent(email)}`);
 }
 
 export async function loginAction(formData: FormData) {
