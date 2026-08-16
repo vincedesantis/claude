@@ -66,7 +66,7 @@ export async function classifyNewsItems(
   return safeParseDecisions(text, items.length);
 }
 
-function safeParseDecisions(text: string, expectedLength: number): NewsDecision[] {
+export function safeParseDecisions(text: string, expectedLength: number): NewsDecision[] {
   try {
     const match = text.match(/\[[\s\S]*\]/);
     const raw = JSON.parse(match ? match[0] : text);
@@ -77,7 +77,7 @@ function safeParseDecisions(text: string, expectedLength: number): NewsDecision[
       const label: EventLabel =
         entry && VALID_LABELS.includes(entry.label) ? entry.label : "discard";
       const duplicateOfIndex =
-        entry && typeof entry.duplicate_of === "number" && entry.duplicate_of >= 1 && entry.duplicate_of <= expectedLength
+        entry && Number.isInteger(entry.duplicate_of) && entry.duplicate_of >= 1 && entry.duplicate_of <= expectedLength
           ? entry.duplicate_of
           : null;
       return { label, duplicateOfIndex };
