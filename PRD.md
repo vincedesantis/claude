@@ -179,7 +179,9 @@ implementation choice would violate one of them, stop and flag it to me
 instead of proceeding.
 ```
 ## 13. Explicitly Deferred (v2+)
-Per-company cadence · in-app digest archive · intraday price monitoring · billing/paywall enforcement.
+Per-company cadence · in-app digest archive · intraday price monitoring · billing/paywall enforcement · Google OAuth login.
+
+**Google login:** wanted eventually, deliberately deferred for now (Vince: "later, not now"). Not a big lift when it happens — the session/middleware/account-resolution architecture (Section 6.6) already works for any Supabase Auth user regardless of provider, so it's additive: a Google Cloud OAuth client, enabling the provider in Supabase, one new Server Action + callback route, and "Continue with Google" buttons. Needs its own entry in Supabase's Redirect URLs allow list — same dashboard page as the pending `/auth/confirm` entry (README's "Authentication setup" section), so worth doing in the same visit whenever that happens.
 
 Multi-user accounts + auth were on this list but are now built (Section 6.6, Phase 7) — signup is open and free; only the billing/trial *enforcement* below remains deferred.
 
