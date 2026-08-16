@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Cadence } from "@/lib/settings";
 
 type Company = {
   id: string;
@@ -12,21 +11,12 @@ type Company = {
 
 type SymbolMatch = { ticker: string; companyName: string };
 
-const CADENCE_OPTIONS: { value: Cadence; label: string }[] = [
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "biweekly", label: "Biweekly" },
-  { value: "monthly", label: "Monthly" },
-];
-
 export default function Dashboard({
   initialCompanies,
-  initialCadence,
   userEmail,
   logoutAction,
 }: {
   initialCompanies: Company[];
-  initialCadence: Cadence;
   userEmail: string;
   logoutAction: () => Promise<void>;
 }) {
@@ -34,7 +24,6 @@ export default function Dashboard({
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<SymbolMatch[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [cadence, setCadenceState] = useState<Cadence>(initialCadence);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -108,22 +97,6 @@ export default function Dashboard({
     }
   }
 
-  async function handleCadenceChange(value: Cadence) {
-    setError(null);
-    const previous = cadence;
-    setCadenceState(value);
-
-    const res = await fetch("/api/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cadence: value }),
-    });
-    if (!res.ok) {
-      setCadenceState(previous);
-      setError("failed to update cadence");
-    }
-  }
-
   return (
     <div className="flex flex-1 justify-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
       <main className="w-full max-w-xl">
@@ -133,7 +106,7 @@ export default function Dashboard({
               Investor News Digest
             </h1>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Manage your watchlist and digest cadence.
+              Manage your watchlist. Your digest sends daily at 2:30pm PT on market days.
             </p>
           </div>
           <form action={logoutAction} className="shrink-0">
@@ -199,24 +172,6 @@ export default function Dashboard({
             </li>
           ))}
         </ul>
-
-        <div className="mt-10">
-          <label htmlFor="cadence" className="block text-sm font-medium text-black dark:text-zinc-50">
-            Digest cadence
-          </label>
-          <select
-            id="cadence"
-            value={cadence}
-            onChange={(e) => handleCadenceChange(e.target.value as Cadence)}
-            className="mt-2 rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-black dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
-          >
-            {CADENCE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
       </main>
     </div>
   );

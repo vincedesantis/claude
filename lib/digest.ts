@@ -4,15 +4,6 @@ import { withRetry } from "./retry";
 import { listWatchlist } from "./watchlist";
 import { isWeekend } from "./market";
 import { generateSpotlight } from "./spotlight";
-import type { Cadence } from "./settings";
-
-// Section 5.1: daily cadence has no elapsed-time gate — every cron run is a
-// send day. Weekly/biweekly/monthly gate on days elapsed since the last send.
-const CADENCE_DAYS: Record<Exclude<Cadence, "daily">, number> = {
-  weekly: 7,
-  biweekly: 14,
-  monthly: 30,
-};
 
 export type UnsentItem = {
   id: string;
@@ -25,25 +16,6 @@ export type UnsentItem = {
   company_id: string;
   watchlist_companies: { ticker: string; company_name: string };
 };
-
-async function isSendDay(userId: string, cadence: Cadence): Promise<boolean> {
-  if (cadence === "daily") return true;
-
-  const supabase = getSupabase();
-  const { data: lastDigest, error } = await supabase
-    .from("digests")
-    .select("sent_at")
-    .eq("user_id", userId)
-    .not("sent_at", "is", null)
-    .order("sent_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  if (!lastDigest?.sent_at) return true;
-
-  const daysSince = (Date.now() - new Date(lastDigest.sent_at).getTime()) / 86_400_000;
-  return daysSince >= CADENCE_DAYS[cadence];
-}
 
 async function fetchUnsentItems(userId: string): Promise<UnsentItem[]> {
   const supabase = getSupabase();
@@ -382,8 +354,8 @@ async function buildDigestContent(
 
 // Renders exactly what sendDigest() would send, without sending it and
 // without marking anything as sent — for previewing what the next real send
-// would look like (also bypasses the weekend/cadence gates, since the point
-// is to preview regardless of whether today is actually a send day).
+// would look like (also bypasses the weekend gate, since the point is to
+// preview regardless of whether today is actually a market day).
 export async function previewDigest(
   userId: string,
 ): Promise<{ html: string; subject: string; itemCount: number }> {
@@ -394,13 +366,9 @@ export async function previewDigest(
 export async function sendDigest(user: {
   id: string;
   email: string;
-  digest_cadence: Cadence;
 }): Promise<{ sent: boolean; reason?: string; itemCount?: number }> {
   if (isWeekend()) {
     return { sent: false, reason: "market closed (weekend)" };
-  }
-  if (!(await isSendDay(user.id, user.digest_cadence))) {
-    return { sent: false, reason: "not a scheduled send day" };
   }
 
   const supabase = getSupabase();
@@ -425,7 +393,6 @@ export async function sendDigest(user: {
     .insert({
       user_id: user.id,
       sent_at: new Date().toISOString(),
-      cadence_at_send: user.digest_cadence,
       item_count: items.length,
     })
     .select("id")

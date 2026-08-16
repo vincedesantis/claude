@@ -1,11 +1,9 @@
 import { getSupabase } from "./supabase";
 import { createAuthClient, createReadOnlyAuthClient } from "./supabase-auth";
-import type { Cadence } from "./settings";
 
 export type AppUser = {
   id: string;
   email: string;
-  digest_cadence: Cadence;
   created_at: string;
   auth_user_id: string | null;
 };
@@ -17,7 +15,7 @@ export type AppUser = {
 // 2. A legacy profile with no auth link yet (auth_user_id IS NULL) whose
 //    email matches — this is the one-time migration path for the row that
 //    existed before signup did (Section 2 of the PRD, pre-auth v1). Claims
-//    it by linking, carrying its watchlist/cadence/history over intact.
+//    it by linking, carrying its watchlist/history over intact.
 // 3. Neither — a genuinely new account, create a fresh profile.
 export async function getOrCreateProfile(authUserId: string, email: string): Promise<AppUser> {
   const supabase = getSupabase();

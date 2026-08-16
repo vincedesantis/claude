@@ -33,7 +33,7 @@ Non-negotiable guardrails
 * No real-time push notifications — digest only
 * Multi-user signup is built (Section 6.6 of PRD.md), but there's no billing/paywall — signup is open and free, don't add payment gating without being asked
 * No digest archive/in-app reading — dashboard is watchlist management only
-* No per-company cadence — one setting per account
+* No cadence choice at all, per-company or per-account — one fixed daily schedule for every account, not user-configurable
 
 Locked decisions (don't re-ask)
 
@@ -42,7 +42,8 @@ Locked decisions (don't re-ask)
 * Headline/news inclusion: earnings releases and guidance revisions, and corporate actions (M&A, CEO/CFO changes, regulatory actions/investigations), are always surfaced regardless of price action. All other news is only surfaced on a day one of the price-based triggers fired, and only if it's judged as actually related to that move — not just any news published that day.
 * Empty digest period = send anyway with a "quiet period" note, don't skip
 * Cron skips weekends entirely (both monitor and digest) — markets are closed, nothing to check. Belt-and-suspenders: `vercel.json`'s schedules are restricted to weekdays (`1-5`) so the functions don't even get invoked on Saturday/Sunday, on top of the `isWeekend()` check in the route handlers themselves
-* Schedule target: monitor runs at market close (1pm Pacific), digest at 3pm Pacific. Vercel Cron uses fixed UTC times with no DST awareness, so vercel.json's UTC times need a manual one-hour adjustment twice a year (currently set for PDT — recheck after DST changes)
+* No digest cadence setting (removed — `supabase/migrations/0004_remove_cadence.sql`, `users.digest_cadence` and `digests.cadence_at_send` both dropped). Every account gets a digest every market day, fixed schedule, no per-user choice
+* Schedule target: monitor runs at market close (1pm Pacific), digest 90 minutes later at 2:30pm Pacific — same for every account. Vercel Cron uses fixed UTC times with no DST awareness, so vercel.json's UTC times need a manual one-hour adjustment twice a year (currently set for PDT — recheck after DST changes)
 * DIGEST_TO_EMAIL is the operator/admin alert address (failure emails, `lib/alert.ts`), not a per-user digest recipient — each account's digest goes to that account's own email now (post-signup)
 * The pre-auth single-user row auto-claims onto whoever logs in with its matching email (case-insensitive) — no manual data migration needed when signup first goes live for an existing deployment (`lib/user.ts`'s `getOrCreateProfile()`)
 

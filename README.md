@@ -16,13 +16,15 @@ anything that touches Supabase, Finnhub, Anthropic, or Resend.
 
 ## Database schema
 
-The schema lives in `supabase/migrations/`. Apply all three files, in order, to a
+The schema lives in `supabase/migrations/`. Apply all four files, in order, to a
 Supabase project via the SQL editor or the Supabase CLI:
 - `0001_init.sql` — core tables (`users`, `watchlist_companies`, `news_events`, `digests`)
 - `0002_price_alerts.sql` — adds `price_history` and the `52w_high` / `52w_low` /
   `ma200_cross` event types
 - `0003_auth.sql` — adds `users.auth_user_id`, linking a profile row to a real
   Supabase Auth account
+- `0004_remove_cadence.sql` — drops `users.digest_cadence` and `digests.cadence_at_send`;
+  every account now gets one fixed daily digest, no per-account cadence choice
 
 ## Authentication setup (one-time, in the Supabase dashboard)
 
@@ -37,7 +39,11 @@ configured in the Supabase dashboard itself; none of this is in code:
 2. **Confirm Email auth is enabled** (Authentication → Providers) — on by
    default.
 3. **Set the Site URL** (Authentication → URL Configuration) to your deployed
-   app's URL. This is where Supabase redirects after email confirmation.
+   app's URL, and add `<that URL>/auth/confirm` to the **Redirect URLs** allow
+   list on the same page — Supabase rejects a redirect target that isn't
+   allow-listed, which is the most likely cause if a confirmation link 404s
+   or lands somewhere unexpected. **(Not yet done as of the last check-in —
+   revisit this before testing signup again.)**
 4. **Email confirmation** (Authentication → Settings → "Confirm email"): if
    enabled (the default), a new signup can't log in until they click the link
    in their confirmation email. The app handles this either way — if

@@ -16,12 +16,5 @@ export default async function Home() {
 
   const companies = await listWatchlist(user.id);
 
-  return (
-    <Dashboard
-      initialCompanies={companies}
-      initialCadence={user.digest_cadence}
-      userEmail={user.email}
-      logoutAction={logoutAction}
-    />
-  );
+  return <Dashboard initialCompanies={companies} userEmail={user.email} logoutAction={logoutAction} />;
 }
