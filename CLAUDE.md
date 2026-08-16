@@ -4,6 +4,7 @@ Stack (locked in — don't propose alternatives without flagging why)
 
 * Frontend/dashboard: Next.js (App Router) + Tailwind, deployed on Vercel free tier
 * Database: Supabase (Postgres), free tier
+* Auth: Supabase Auth, email/password — no separate auth vendor. Server-only: signup/login/logout are Server Actions, the anon key is never sent to the browser, so no RLS dependency was introduced (data access still goes through the existing service-role client, scoped by session-derived user ID)
 * News + price data: Finnhub, free tier — one provider covers both, avoid adding a second data source
 * Summarization: Claude API, Haiku model (cost-sensitive at this volume)
 * Email: Resend, free tier
@@ -19,6 +20,7 @@ RESEND_FROM_EMAIL=
 DIGEST_TO_EMAIL=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_ANON_KEY=
 CRON_SECRET=
 
 ```
@@ -29,9 +31,9 @@ Non-negotiable guardrails
 * Every digest email (real or quiet-period) carries a fixed disclaimer footer — "This letter is for informational purposes only and is not investment advice or a recommendation to buy, hold or sell any security ever." — regardless of what the LLM-generated content says (`lib/digest.ts`, `DISCLAIMER_HTML`)
 * No trade execution or brokerage integration
 * No real-time push notifications — digest only
-* No login/auth in v1 (single user, no multi-tenant UI)
-* No digest archive/in-app reading in v1 — dashboard is watchlist management only
-* No per-company cadence in v1 — one account-level setting
+* Multi-user signup is built (Section 6.6 of PRD.md), but there's no billing/paywall — signup is open and free, don't add payment gating without being asked
+* No digest archive/in-app reading — dashboard is watchlist management only
+* No per-company cadence — one setting per account
 
 Locked decisions (don't re-ask)
 
@@ -41,8 +43,10 @@ Locked decisions (don't re-ask)
 * Empty digest period = send anyway with a "quiet period" note, don't skip
 * Cron skips weekends entirely (both monitor and digest) — markets are closed, nothing to check. Belt-and-suspenders: `vercel.json`'s schedules are restricted to weekdays (`1-5`) so the functions don't even get invoked on Saturday/Sunday, on top of the `isWeekend()` check in the route handlers themselves
 * Schedule target: monitor runs at market close (1pm Pacific), digest at 3pm Pacific. Vercel Cron uses fixed UTC times with no DST awareness, so vercel.json's UTC times need a manual one-hour adjustment twice a year (currently set for PDT — recheck after DST changes)
+* DIGEST_TO_EMAIL is the operator/admin alert address (failure emails, `lib/alert.ts`), not a per-user digest recipient — each account's digest goes to that account's own email now (post-signup)
+* The pre-auth single-user row auto-claims onto whoever logs in with its matching email (case-insensitive) — no manual data migration needed when signup first goes live for an existing deployment (`lib/user.ts`'s `getOrCreateProfile()`)
 
 Build order
-Follow Section 9 of PRD.md in phase order. Verify each phase's acceptance check before starting the next. Don't jump ahead. Phases 0-6 are complete — PRD.md is kept in sync with what's actually shipped (see its Section 6 for functional detail, Section 7 for the real API contracts), not just the original plan, so re-read it rather than assuming staleness.
+Follow Section 9 of PRD.md in phase order. Verify each phase's acceptance check before starting the next. Don't jump ahead. Phases 0-7 are complete — PRD.md is kept in sync with what's actually shipped (see its Section 6 for functional detail, Section 7 for the real API contracts), not just the original plan, so re-read it rather than assuming staleness.
 When in doubt
 Flag scope questions rather than guessing — especially anything that would edge toward v2 features (Section 13 of PRD.md) or violate a guardrail above.

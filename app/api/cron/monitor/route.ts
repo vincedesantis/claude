@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrCreateUser } from "@/lib/user";
+import { listAllUsers } from "@/lib/user";
 import { listWatchlist } from "@/lib/watchlist";
 import { monitorCompany } from "@/lib/monitor";
 import { sendFailureAlert } from "@/lib/alert";
@@ -31,37 +31,44 @@ async function handleMonitor(request: NextRequest) {
   }
 
   try {
-    const user = await getOrCreateUser();
-    const companies = await listWatchlist(user.id);
+    const users = await listAllUsers();
 
+    let tickersChecked = 0;
     let itemsLogged = 0;
-    const failures: { ticker: string; message: string }[] = [];
+    const failures: { user_email: string; ticker: string; message: string }[] = [];
 
-    for (const company of companies) {
-      try {
-        const result = await monitorCompany(company);
-        itemsLogged += result.itemsLogged;
-        for (const warning of result.warnings) {
-          console.error(`monitor warning for ${company.ticker}: ${warning}`);
-          failures.push({ ticker: company.ticker, message: warning });
+    for (const user of users) {
+      const companies = await listWatchlist(user.id);
+      tickersChecked += companies.length;
+
+      for (const company of companies) {
+        try {
+          const result = await monitorCompany(company);
+          itemsLogged += result.itemsLogged;
+          for (const warning of result.warnings) {
+            console.error(`monitor warning for ${user.email}/${company.ticker}: ${warning}`);
+            failures.push({ user_email: user.email, ticker: company.ticker, message: warning });
+          }
+        } catch (error) {
+          console.error(`monitor failed for ${user.email}/${company.ticker}`, error);
+          failures.push({ user_email: user.email, ticker: company.ticker, message: errorMessage(error) });
         }
-      } catch (error) {
-        console.error(`monitor failed for ${company.ticker}`, error);
-        failures.push({ ticker: company.ticker, message: errorMessage(error) });
       }
     }
 
     // A partial failure shouldn't silently disappear into Vercel's logs —
-    // email it, same as a real digest item, so a bad day is actually seen.
+    // email it to the operator (DIGEST_TO_EMAIL), same as a real digest
+    // item, so a bad day is actually seen.
     if (failures.length > 0) {
       await sendFailureAlert(
         "monitoring check failed for some tickers",
-        failures.map((f) => `${f.ticker}: ${f.message}`),
+        failures.map((f) => `${f.user_email} / ${f.ticker}: ${f.message}`),
       );
     }
 
     return NextResponse.json({
-      tickers_checked: companies.length,
+      users_checked: users.length,
+      tickers_checked: tickersChecked,
       items_logged: itemsLogged,
       ...(failures.length > 0 ? { failures } : {}),
     });

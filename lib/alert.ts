@@ -4,6 +4,10 @@ import { getResend } from "./resend";
 // anyone having to go check Vercel's logs (Section 9, Phase 6: "so a silent
 // failure day is visible"). Best-effort — if this itself fails, that's
 // logged and swallowed rather than crashing the caller.
+//
+// DIGEST_TO_EMAIL is the operator/admin alert address (post-signup: the
+// person operating the app, not a per-user digest recipient — each user's
+// own digest now goes to their own account email via lib/digest.ts).
 export async function sendFailureAlert(subject: string, details: string[]): Promise<void> {
   const fromEmail = process.env.RESEND_FROM_EMAIL;
   const toEmail = process.env.DIGEST_TO_EMAIL;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOrCreateUser } from "@/lib/user";
+import { listAllUsers } from "@/lib/user";
 import { sendDigest } from "@/lib/digest";
 import { sendFailureAlert } from "@/lib/alert";
 
@@ -23,13 +23,31 @@ async function handleDigest(request: NextRequest) {
   }
 
   try {
-    const user = await getOrCreateUser();
-    const result = await sendDigest(user);
+    const users = await listAllUsers();
+    const results: { user_email: string; sent: boolean; reason?: string; item_count?: number }[] = [];
+    const failures: string[] = [];
 
-    if (!result.sent) {
-      return NextResponse.json({ sent: false, reason: result.reason });
+    for (const user of users) {
+      try {
+        const result = await sendDigest(user);
+        results.push({
+          user_email: user.email,
+          sent: result.sent,
+          ...(result.reason ? { reason: result.reason } : {}),
+          ...(result.itemCount !== undefined ? { item_count: result.itemCount } : {}),
+        });
+      } catch (error) {
+        console.error(`digest send failed for ${user.email}`, error);
+        failures.push(`${user.email}: ${errorMessage(error)}`);
+        results.push({ user_email: user.email, sent: false, reason: "send failed" });
+      }
     }
-    return NextResponse.json({ sent: true, item_count: result.itemCount });
+
+    if (failures.length > 0) {
+      await sendFailureAlert("digest send failed for some users", failures);
+    }
+
+    return NextResponse.json({ users_checked: users.length, results });
   } catch (error) {
     console.error("digest cron failed", error);
     await sendFailureAlert("digest send failed", [errorMessage(error)]);

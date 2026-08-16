@@ -30,4 +30,5 @@ jobs:
           DIGEST_TO_EMAIL: ci@example.com
           SUPABASE_URL: https://ci-placeholder.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
+          SUPABASE_ANON_KEY: ci-placeholder
           CRON_SECRET: ci-placeholder

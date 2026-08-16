@@ -1,7 +1,7 @@
 # PRD: Investor News Digest
 **Author:** Vince
-**Status:** v1 built (Phases 0-6 complete) — this doc is kept in sync with the shipped app, not just the original plan
-**Last updated:** August 14, 2026
+**Status:** Multi-user, no billing yet (Phases 0-7 complete) — this doc is kept in sync with the shipped app, not just the original plan
+**Last updated:** August 16, 2026
 ---
 ## How to Use This PRD
 1. Put this file at the root of a new project folder as `PRD.md`. Also save the companion `CLAUDE.md` (provided alongside this file) in the same folder — it carries the tech stack and guardrails forward into every session so Claude Code doesn't re-derive or drift from them.
@@ -12,7 +12,7 @@
 ## 1. Problem Statement
 Vince holds positions in multiple public companies and can't reliably keep up with news that actually moves those stocks. Checking 5+ sites/apps per company doesn't scale. Existing tools either flood with noise (every headline mention) or are built for professional traders. The gap: a lightweight, personal system that watches a defined list of tickers, filters for what actually matters, and delivers it as a scannable digest on a schedule the user controls.
 ## 2. Who This Is For
-**v1: single user (Vince only). No login, no multi-tenancy.** Data model carries `user_id` so a future multi-user version isn't a rewrite, but no auth/billing/multi-user UI work happens in v1. This possibility does not expand v1 scope.
+**Multi-user, no billing yet.** v1 was single-user with no login (data model carried `user_id` throughout specifically so this wouldn't be a rewrite when it changed). Real signup now exists — Supabase Auth, email/password (Section 6.6) — so multiple people can each run their own isolated watchlist/cadence/digest. Billing/trial enforcement (Section 13's pricing decision) is still not built; anyone who signs up currently gets full access for free.
 ## 3. Goals & Success Criteria
 **Primary success metric:** Vince reads the digest in under 5 minutes and feels fully caught up on everything material across his watchlist.
 - Every item: headline + 1-2 sentence "why it matters" + source link. Not full articles.
@@ -24,8 +24,8 @@ Claude Code should treat these as boundaries to actively check work against, not
 - **No investment or trading advice/recommendations.** Report facts only. No "buy/sell/hold," no price targets, no opinions. Enforce via prompt constraints on the summarization step (Section 6.3) and validate with the test in Section 10. Every digest send — real or quiet-period — also carries a fixed disclaimer footer, regardless of what the LLM-generated content above it says: *"This letter is for informational purposes only and is not investment advice or a recommendation to buy, hold or sell any security ever."* (`lib/digest.ts`, `DISCLAIMER_HTML`).
 - **No trade execution or brokerage connection.** Read-only, always.
 - **No real-time push notifications.** Digest only, on the user's chosen cadence — this is the product's core value prop, not a missing feature.
-- **No storing or reselling personal data.** Watchlist + one email address is the entire personal data surface. No third-party sharing, no analytics resale.
-- **No login/auth system in v1.**
+- **No storing or reselling personal data.** Watchlist + one email address per account is the entire personal data surface. No third-party sharing, no analytics resale.
+- **No billing/paywall yet.** Signup is open and free (Section 2) — the pricing decision in Section 13 isn't enforced in code.
 - **No digest archive or in-app reading in v1.** Dashboard is watchlist management only.
 - **No per-company cadence in v1.** One account-level cadence setting.
 ## 5. Core Mechanism
@@ -48,7 +48,7 @@ Monitoring runs **daily regardless of digest cadence** — a monthly digest stil
 - Remove a company.
 - View current watchlist (ticker, company name only — no archive, per Section 4).
 - Set digest cadence: daily / weekly / biweekly / monthly (single account-wide setting).
-- No login.
+- Requires login (Section 6.6) — the dashboard and every mutating route only ever act on the signed-in account's own data.
 ### 6.2 Monitoring & Detection (daily cron job)
 - For each watchlist ticker: pull news since last check, pull latest close price.
 - Apply Section 5.2 filter logic, including the 52-week high/low and 200-day MA cross triggers (Section 5.1) and LLM relevance/duplicate classification for general news.
@@ -68,10 +68,19 @@ Monitoring runs **daily regardless of digest cadence** — a monthly digest stil
 - **Your Watchlist:** a summary table at the bottom of every digest — including quiet-period sends — showing every watchlist ticker's move since the prior recorded close, using `price_history` already on hand (no extra Finnhub calls).
 - Itemized headline entries only cover actual news (`material`/`pr`); price-based signals (`price_trigger`/`52w_high`/`52w_low`/`ma200_cross`) are represented by the Spotlight header, not repeated as their own line item.
 ### 6.5 Operational Visibility
-- **Digest preview:** `GET /api/preview-digest` renders exactly what the next real send would contain — same unauthenticated exposure level as the rest of the dashboard (Section 4: no login in v1) — without sending anything or marking items as sent. Bypasses the weekend/cadence gates, since the point is to preview regardless of whether today is actually a scheduled send day.
-- **Failure alerts:** any cron failure (whole-run or per-ticker) sends a short plain-text alert email so a bad day is visible without checking Vercel's logs, instead of only a `console.error` nobody reads.
+- **Digest preview:** `GET /api/preview-digest` renders exactly what the signed-in user's next real send would contain, without sending anything or marking items as sent. Bypasses the weekend/cadence gates, since the point is to preview regardless of whether today is actually a scheduled send day.
+- **Failure alerts:** any cron failure (whole-run, or per-user/per-ticker) sends a short plain-text alert email to the operator address (`DIGEST_TO_EMAIL` — Vince, not an individual user) so a bad day is visible without checking Vercel's logs, instead of only a `console.error` nobody reads.
+### 6.6 Authentication
+- **Provider:** Supabase Auth, email/password. No other stack component added — Supabase was already the DB.
+- **Signup/login/logout** are plain HTML forms submitted via Next.js Server Actions (`app/auth/actions.ts`) — no Supabase client code ever runs in the browser, so the Supabase anon key is never shipped to the client (`SUPABASE_ANON_KEY`, read server-only). All existing data access continues through the service-role client (`lib/supabase.ts`) exactly as in v1, just scoped by the session's user ID instead of the old getOrCreateUser() singleton — no RLS dependency was introduced, since the anon key never reaches a context that could query Supabase directly.
+- **Session handling:** `proxy.ts` (Next.js 16's middleware convention) refreshes the session cookie on every request and redirects signed-out visits to `/login` (except `/login`, `/signup`, `/auth/confirm`, and everything under `/api/` — API routes 401 with JSON instead of redirecting, since a redirect would silently divert a `fetch()` call into an HTML page).
+- **Migrating the pre-auth single-user row:** the one `users` row that existed before signup did is left with `auth_user_id = NULL` (`supabase/migrations/0003_auth.sql`). `lib/user.ts`'s `getOrCreateProfile()` auto-claims it — by matching email, case-insensitively — the first time its owner logs in with a real account, carrying the existing watchlist/cadence/history over with no manual migration step.
+- **Email confirmation** is whatever the Supabase project has configured (Authentication → Settings) — the app handles both: if `signUp()` returns an active session immediately, the account is live; if not, the user is told to check their email and log in afterward. Confirmation link handling (`app/auth/confirm/route.ts`) requires an optional Supabase email-template change to activate — the default Supabase-hosted confirmation flow works without it, just without auto-login on confirm. See README's "Authentication setup" section for the dashboard-side steps.
+- **Cron routes loop over every account** (`listAllUsers()`) instead of the single implicit user — each account's watchlist is monitored, and each gets their own digest sent to their own account email, independently of every other account's cadence/failures.
 ## 7. API Contracts
-All routes under `/app/api`. Cron routes are internal — accept either the `x-cron-secret` header (manual/API testing) or the `Authorization: Bearer $CRON_SECRET` header Vercel attaches automatically to scheduled runs. Non-cron routes are unauthenticated, matching the no-login v1 scope (Section 4) — the dashboard has no user to authenticate.
+All routes under `/app/api`. Cron routes are internal — accept either the `x-cron-secret` header (manual/API testing) or the `Authorization: Bearer $CRON_SECRET` header Vercel attaches automatically to scheduled runs. Every other route requires a signed-in session (Section 6.6) and returns `401 { "error": "unauthorized" }` without one; each acts only on the signed-in account's own data.
+
+Signup/login/logout aren't JSON APIs — they're Server Actions backing plain HTML forms (`app/auth/actions.ts`, submitted from `app/login/page.tsx` / `app/signup/page.tsx` / the dashboard's logout button), so there's no request/response contract to document beyond: success redirects to `/`, failure redirects back to the form with `?error=`. `GET /auth/confirm` (Route Handler, not a Server Action) is the target of the optional email-confirmation link — see Section 6.6.
 ```
 POST   /api/watchlist
   body: { "ticker": "AAPL", "companyName"?: "Apple Inc." }  // companyName optional — set when
@@ -113,8 +122,10 @@ GET|POST /api/cron/digest         // triggered by Vercel Cron, daily (checks int
 ## 8. Data Model
 ```
 users
-  id, email, digest_cadence, created_at
-  -- v1: exactly one row, modeled for future multi-user
+  id, email, digest_cadence, created_at, auth_user_id (nullable, unique, references auth.users)
+  -- auth_user_id links a profile row to a real Supabase Auth account (Section
+  -- 6.6). NULL only ever occurs on the one pre-auth row that predates signup
+  -- existing, until its owner logs in and it gets auto-claimed.
 watchlist_companies
   id, user_id, ticker, company_name, added_at
 news_events
@@ -140,8 +151,9 @@ Each phase should be verified working before the next starts. This is the sequen
 | 4 | P0 | Digest compilation + Resend email delivery + mark-as-sent | Manually trigger `/api/cron/digest`; real email arrives, grouped by company, readable in under 5 minutes |
 | 5 | P1 | Empty-period "quiet period" handling | Trigger digest with zero unsent items; confirm fallback email sends |
 | 6 | P1 | Error handling + retry on API failures + basic logging so a silent failure day is visible | Kill the Finnhub key temporarily; confirm the failure is logged, not swallowed |
-| 7 | P2 (explicitly deferred) | Multi-user auth, digest archive, per-company cadence, intraday price data | Not built in v1 — flag if a session drifts toward this |
-**Status: Phases 0-6 complete**, plus scope explicitly within the P0-P1 functional requirements that shipped after the initial pass: name search (6.1), 52-week high/low and 200-day MA triggers (5.1/5.2), Stock Spotlight and the watchlist summary section (6.4), digest preview and failure alerts (6.5), and an automated test suite for Section 10 (`npm test`, `lib/__tests__/`) replacing the manual spot-checks the acceptance checks above originally called for.
+| 7 | P1 | Multi-user signup (Supabase Auth, email/password), per-account data isolation, cron looping over every account (Section 6.6) | Sign up with a new account; confirm its watchlist/digest are isolated from other accounts; confirm the pre-auth row auto-claims on first login with its original email |
+| 8 | P2 (explicitly deferred) | Billing/trial paywall, digest archive, per-company cadence, intraday price data | Not built — flag if a session drifts toward this |
+**Status: Phases 0-7 complete**, plus scope explicitly within the P0-P1 functional requirements that shipped after the initial pass: name search (6.1), 52-week high/low and 200-day MA triggers (5.1/5.2), Stock Spotlight and the watchlist summary section (6.4), digest preview and failure alerts (6.5), multi-user auth (6.6, Phase 7), and an automated test suite for Section 10 (`npm test`, `lib/__tests__/`) replacing the manual spot-checks the acceptance checks above originally called for.
 ## 10. Test Cases
 | # | Behavior | Input | Expected | Assertion |
 |---|---|---|---|---|
@@ -169,6 +181,8 @@ implementation choice would violate one of them, stop and flag it to me
 instead of proceeding.
 ```
 ## 13. Explicitly Deferred (v2+)
-Per-company cadence · in-app digest archive · multi-user accounts + auth · intraday price monitoring · public launch/billing.
+Per-company cadence · in-app digest archive · intraday price monitoring · billing/paywall enforcement.
 
-**Pricing model (pre-decided for whenever public launch happens):** paid-from-start with a free trial, not a permanent free tier. Rationale: a free tier means carrying Resend/Supabase/Vercel costs indefinitely for non-converting users plus permanent ticker-cap enforcement work; a trial just needs an expiration date and everyone either pays or drops off. Higher signup friction is an acceptable tradeoff for this product — someone who wants a personal portfolio digest is already motivated, so filtering for real intent early is the right shape here. Not actionable until multi-user/billing (this section) is actually built.
+Multi-user accounts + auth were on this list but are now built (Section 6.6, Phase 7) — signup is open and free; only the billing/trial *enforcement* below remains deferred.
+
+**Pricing model (pre-decided for whenever billing gets built):** paid-from-start with a free trial, not a permanent free tier. Rationale: a free tier means carrying Resend/Supabase/Vercel costs indefinitely for non-converting users plus permanent ticker-cap enforcement work; a trial just needs an expiration date and everyone either pays or drops off. Higher signup friction is an acceptable tradeoff for this product — someone who wants a personal portfolio digest is already motivated, so filtering for real intent early is the right shape here. Not actionable until billing (this section) is actually built — Stripe (or similar) isn't in the stack yet.

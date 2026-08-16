@@ -22,9 +22,13 @@ const CADENCE_OPTIONS: { value: Cadence; label: string }[] = [
 export default function Dashboard({
   initialCompanies,
   initialCadence,
+  userEmail,
+  logoutAction,
 }: {
   initialCompanies: Company[];
   initialCadence: Cadence;
+  userEmail: string;
+  logoutAction: () => Promise<void>;
 }) {
   const [companies, setCompanies] = useState(initialCompanies);
   const [query, setQuery] = useState("");
@@ -123,12 +127,22 @@ export default function Dashboard({
   return (
     <div className="flex flex-1 justify-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
       <main className="w-full max-w-xl">
-        <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
-          Investor News Digest
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Manage your watchlist and digest cadence.
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-zinc-50">
+              Investor News Digest
+            </h1>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              Manage your watchlist and digest cadence.
+            </p>
+          </div>
+          <form action={logoutAction} className="shrink-0">
+            <button type="submit" className="text-sm text-zinc-500 hover:text-black dark:hover:text-zinc-50">
+              Log out
+            </button>
+          </form>
+        </div>
+        <p className="mt-1 text-xs text-zinc-400">{userEmail}</p>
 
         <form onSubmit={handleAdd} className="relative mt-8 flex gap-2">
           <input
