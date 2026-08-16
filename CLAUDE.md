@@ -39,7 +39,7 @@ Locked decisions (don't re-ask)
 * 52-week high/low and a 200-day moving average cross are their own price-based triggers, alongside the daily % move (Finnhub's basic-financials data covers 52-week high/low immediately; the 200-day MA is computed from price history this app records itself day-by-day, so it isn't available for a given ticker until ~200 trading days of history accumulate)
 * Headline/news inclusion: earnings releases and guidance revisions, and corporate actions (M&A, CEO/CFO changes, regulatory actions/investigations), are always surfaced regardless of price action. All other news is only surfaced on a day one of the price-based triggers fired, and only if it's judged as actually related to that move — not just any news published that day.
 * Empty digest period = send anyway with a "quiet period" note, don't skip
-* Cron skips weekends entirely (both monitor and digest) — markets are closed, nothing to check
+* Cron skips weekends entirely (both monitor and digest) — markets are closed, nothing to check. Belt-and-suspenders: `vercel.json`'s schedules are restricted to weekdays (`1-5`) so the functions don't even get invoked on Saturday/Sunday, on top of the `isWeekend()` check in the route handlers themselves
 * Schedule target: monitor runs at market close (1pm Pacific), digest at 3pm Pacific. Vercel Cron uses fixed UTC times with no DST awareness, so vercel.json's UTC times need a manual one-hour adjustment twice a year (currently set for PDT — recheck after DST changes)
 
 Build order
